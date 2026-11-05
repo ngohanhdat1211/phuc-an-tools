@@ -17,26 +17,56 @@ import time
 from PIL import Image
 
 FONT = ["Anton", "Oswald:wght@400;600;700", "Bebas+Neue", "Playfair+Display:ital,wght@0,700;1,800",
-        "Yellowtail", "Black+Ops+One", "Alfa+Slab+One", "Pacifico", "Permanent+Marker", "Roboto+Slab:wght@700"]
+        "Yellowtail", "Black+Ops+One", "Alfa+Slab+One", "Pacifico", "Permanent+Marker", "Roboto+Slab:wght@700",
+        "Graduate", "Rye", "Staatliches", "Bungee", "Sancreek", "Cinzel:wght@700;900", "Kaushan+Script",
+        "Lobster", "Holtwood+One+SC", "Racing+Sans+One"]
 TEN_FONT = "Anton, Oswald, Bebas Neue, Playfair Display, Yellowtail, Black Ops One, Alfa Slab One, Pacifico, " \
-           "Permanent Marker, Roboto Slab"
+           "Permanent Marker, Roboto Slab, Graduate, Rye, Staatliches, Bungee, Sancreek, Cinzel, Kaushan Script, " \
+           "Lobster, Holtwood One SC, Racing Sans One"
 DUOI = (".png", ".jpg", ".jpeg", ".webp")
 
-DE_BAI = """You are a senior t-shirt graphic designer for an Etsy/Amazon Merch shop.
-Look at the reference design image: {anh}
-It belongs to ANOTHER shop. Do NOT copy its wording, slogan, layout or artwork. Keep only the niche and the buyer
-(who wears it, what they are proud of). Invent ONE new, original, more striking design for the same buyers{khac}.
+# mỗi mẫu một phong cách bán chạy khác nhau -> nhiều mẫu không giống nhau
+PHONG_CACH = [
+    "ILLUSTRATED EMBLEM: a detailed hero illustration (main subject of the niche) inside a circular or shield badge, "
+    "curved text on top and bottom arcs, banner ribbon with the slogan, small stars/laurels, vintage engraved feel",
+    "RETRO SUNSET 70s: big retro sunset (half circle with horizontal stripe cuts) behind a detailed silhouette "
+    "illustration of the niche subject, layered thick retro typography with offset shadow, 3-4 warm colors",
+    "TYPOGRAPHIC LOCKUP: bold mixed-font lockup (condensed block + script + small spaced caps), words of different "
+    "sizes interlocking like a puzzle, decorative rules, stars, dates/'EST.' line, small illustrated icon accents",
+    "AMERICANA VINTAGE: worn flag elements built into the lettering or behind it, collegiate/varsity type with "
+    "outline + drop shadow, eagle or niche illustration, heavy distressed print texture",
+    "SKETCH / LINE-ART: detailed line-art illustration of the niche subject (many strokes, hatching for shading) "
+    "with clean bold typography around it, 2-3 colors, premium minimalist boutique look",
+]
 
-Rules:
-- New short slogan (2-9 words), punchy, emotional or funny, plain English. Not a famous quote, not a trademark,
-  no brand/team/character names, no "shirt/tee" words.
-- Strong typographic hierarchy (one hero word/line), plus simple vector art built from shapes/paths
-  (badges, flags, stars, sunsets, mountains, tools, frames, ribbons). No raster images, no <image>, no external links.
+DE_BAI = """You are an award-level t-shirt graphic designer whose designs sell in the Etsy / Amazon Merch top 1%.
+Look at the reference design image: {anh}
+It belongs to ANOTHER shop. Do NOT copy its wording, slogan, layout or artwork. Keep only the niche and the buyer.
+Goal: a NEW design that is clearly MORE premium and more emotional than the reference, so a buyer scrolling past
+50 similar shirts stops and buys this one{khac}.
+
+Step 1 - think (silently) about the buyer: who wears it, what identity/pride/joke they want to show the world,
+what gift-giver buys it. Write a slogan (2-9 words) they would say about themselves: specific, emotional or witty,
+plain English. Not a famous quote, not a trademark, no brand/team/character names, no "shirt/tee" words.
+No official military branch names, seals, insignia, unit logos (they are trademarks) - generic soldiers, eagles,
+flags, dog tags, boots, helmets are fine.
+
+Step 2 - style for THIS design: {phong_cach}
+
+Step 3 - draw it as a rich, professional SVG (this is what separates a seller from clip art):
+- A real ILLUSTRATION as the centerpiece, not a few basic shapes: build it from many <path> elements with curves
+  (C/Q commands), at least 2 tones per object (base + shadow/highlight shapes), outlines, small details.
+  Examples of techniques: halftone dots via <pattern>, engraved hatching lines, sunburst rays, texture lines,
+  inner strokes, offset shadow copies of text, outlined text (paint-order="stroke"), arc text on <textPath>.
+- Typography is the hero: 2-3 fonts mixed with clear hierarchy, one hero word very large, supporting lines tight
+  and aligned to the illustration edges. Every text line uses textLength + lengthAdjust="spacingAndGlyphs".
+- Composition: compact, balanced block (like a printed chest graphic), no random floating bits, no big empty gaps.
 - Canvas: <svg xmlns="http://www.w3.org/2000/svg" width="4200" height="4800" viewBox="0 0 4200 4800">,
-  transparent background, printed on a {nen} shirt -> choose colors that pop on it (max 4 colors). On a dark shirt NEVER use navy, black, dark gray or any dark color
-  for text or large shapes (they disappear); on a light shirt avoid white/cream/pale colors.
-- Fonts: only these Google Fonts by font-family: {font}. Use textLength + lengthAdjust="spacingAndGlyphs" on wide
-  lines so text never overflows. Keep everything inside x 150..4050, y 150..4650. Fill the canvas well (art ~ 90% wide).
+  transparent background, printed on a {nen} shirt -> 3-5 colors that pop on it. On a dark shirt NEVER use navy,
+  black, dark gray or any dark color for text or large shapes (they disappear; dark only as thin inner details over
+  light shapes); on a light shirt avoid white/cream/pale colors.
+- Fonts: only these Google Fonts by font-family: {font}. Everything inside x 150..4050, y 150..4650, art ~90% wide.
+- No raster images, no <image>, no external links.
 - Optional vintage distress: wrap content in <g filter="url(#g)"> with
   <filter id="g" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.02"
   numOctaves="4" seed="7" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 12 -7.6"
@@ -45,9 +75,14 @@ Rules:
 - Write the SVG with the Write tool to: {svg}
 Then answer with exactly one line: SLOGAN: <the new slogan>"""
 
-SOAT = """Check the rendered preview of your design: {xem} (SVG source: {svg}). The preview background is the shirt color ({nen}).
-Fix any problem by rewriting the SVG file with the Write tool: text clipped/overflowing, overlapping elements,
-illegible text, any text or shape with weak contrast against the shirt color, unbalanced empty space, art that looks broken. If it is already good, do not touch the file.
+SOAT = """You are the art director. Look at the rendered preview: {xem} (SVG source: {svg}). Background = shirt color ({nen}).
+Reference design from a competitor: {anh}
+Judge it like a buyer on Etsy: would this sell better than the competitor? Score 1-10 for: illustration detail,
+typography craft, composition, color contrast on the shirt.
+1) Always fix errors: clipped/overflowing text, overlaps, illegible text, weak contrast, broken art, big empty gaps.
+2) If any score is below 8: UPGRADE the design in the SVG (more detailed illustration with shading layers, better
+   type lockup, tighter composition) - keep the same slogan and style. Rewrite the file with the Write tool.
+If everything is 8+ and error-free, do not touch the file.
 Answer with exactly one line: OK or FIXED"""
 
 
@@ -144,14 +179,16 @@ def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print):
     os.makedirs(ra, exist_ok=True)
     nen = nen_ao(anh)
     kq, da = [], []
+    lech = sum(map(ord, os.path.basename(anh))) % len(PHONG_CACH)  # design khác nhau bắt đầu phong cách khác
     for i in range(so):
         tam = tempfile.mkdtemp(prefix="rd_", dir=ra)
         svg = os.path.join(tam, "design.svg")
-        khac = f'. Already made (do something clearly different): {"; ".join(da)}' if da else ""
+        khac = (f'. Already made: {"; ".join(da)} - the new slogan must not reuse their key words or opening words, '
+                f'and the main illustration subject must be different') if da else ""
         t0 = time.time()
         bao(f"[{i + 1}/{so}] Claude đang nghĩ mẫu mới cho {os.path.basename(anh)}…")
         tra, phi = goi_claude(claude, DE_BAI.format(anh=os.path.abspath(anh), khac=khac, nen=nen, font=TEN_FONT,
-                                                    svg=svg), tam, os.path.dirname(os.path.abspath(anh)))
+                                                    svg=svg, phong_cach=PHONG_CACH[(i + lech) % len(PHONG_CACH)]), tam, os.path.dirname(os.path.abspath(anh)))
         m = re.search(r"SLOGAN:\s*(.+)", tra)
         cau = m.group(1).strip().strip('"') if m else f"redesign {i + 1}"
         if not os.path.exists(svg):
@@ -162,7 +199,8 @@ def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print):
             xem = os.path.join(tam, "xem.jpg")
             xem_truoc(png, xem, nen)
             bao(f"[{i + 1}/{so}] Claude soát lại bản vẽ…")
-            tra2, phi2 = goi_claude(claude, SOAT.format(xem=xem, svg=svg, nen=nen), tam, tam)
+            tra2, phi2 = goi_claude(claude, SOAT.format(xem=xem, svg=svg, nen=nen, anh=os.path.abspath(anh)), tam,
+                                     os.path.dirname(os.path.abspath(anh)))
             phi += phi2
             if "FIXED" in tra2.upper():
                 os.remove(png)

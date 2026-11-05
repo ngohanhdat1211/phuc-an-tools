@@ -433,7 +433,7 @@ class App(tk.Tk):
 
     MUC_RD = [("haiku", "Tiết kiệm (Haiku)", "đơn giản, ~30 giây, gần như không tốn hạn mức (~1/20 Opus)"),
               ("sonnet", "Cân bằng (Sonnet) — nên dùng", "khá đẹp, ~1 phút, ~1/2 hạn mức Opus"),
-              ("opus", "Đẹp nhất (Opus)", "nhiều chi tiết nhất, ~2 phút, tốn hạn mức nhất")]
+              ("opus", "Đẹp nhất (Opus)", "có hình minh hoạ chi tiết, ~3-4 phút, tốn hạn mức nhất")]
 
     def _chon_mo_hinh(self):
         """Hộp chọn mức chất lượng / hạn mức Max. Trả 'haiku'/'sonnet'/'opus' hoặc None nếu đóng."""
