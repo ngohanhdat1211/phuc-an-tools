@@ -1,11 +1,10 @@
 {
- "cap_nhat_luc": "2026-11-05 17:13",
+ "cap_nhat_luc": "2026-11-05 17:15",
  "etsy": {
   "file": {
    "app.py": "6b5f91c47f4dd26783fdf43bd23aca86670ee721840299091ed813ad06d7a6e1",
    "tach_design.py": "096bfff457231cb486cc9154ad1261101b0c08fe09a70479e8e7971e126950fb",
    "giao_dien.py": "e3dcc23e6f86681278f6291917e6f0f56f560a54c8f9fc861d9cab215ff4cfb9",
-   "icon.ico": "662dc07f34d905faface367d141bae7df36d7b7b6afa79d1eb9929c73120bd50",
    "HUONG DAN.txt": "28d199ba6f3bec74687e222e2666a51b7da6531c10d93c7e9174eee4b55dbd5a",
    "cai-dat mau.json": "07901d4a87bfdc1e5a28802dc1cb2f146f3079c5a4f0de8d019c00e56c79c5a6",
    "tu_cap_nhat.py": "e1953b48a348707d531737ab20960d322c71778c4f410f65cef2d17dc030bed5"
@@ -16,7 +15,6 @@
    "merch_app.py": "9e2a530c8ef8382256190c2c9ba1fb09b43f7b48a31040c48dba6063f84377cb",
    "merch_tieu_de.py": "128678903403e036a7fe7d54f0a8fd11ff14a2a11150af5c9dbffbd7737ff954",
    "giao_dien.py": "e3dcc23e6f86681278f6291917e6f0f56f560a54c8f9fc861d9cab215ff4cfb9",
-   "icon.ico": "662dc07f34d905faface367d141bae7df36d7b7b6afa79d1eb9929c73120bd50",
    "tu_cap_nhat.py": "e1953b48a348707d531737ab20960d322c71778c4f410f65cef2d17dc030bed5"
   }
  }
