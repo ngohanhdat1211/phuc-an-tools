@@ -2,7 +2,9 @@ r"""Viết Title / Brand / 2 Bullet cho Amazon Merch on Demand từ ảnh design
 
 - Đọc chữ trên design (RapidOCR, chạy máy, không tốn tiền) + gợi ý từ tên file.
 - Từ khoá: ô gợi ý tìm kiếm Amazon (khách thật gõ), lưu đệm 14 ngày; mất mạng thì dùng bộ dựng sẵn.
-- Soát độ dài Merch: Title <=60, Brand <=50, Bullet <=256; từ cấm (thương hiệu, lời quảng cáo).
+- Bullet/mô tả rải cụm khách gõ thật (bỏ chữ loại hàng), mỗi design một kiểu câu.
+- Soát độ dài Merch: Title <=60, Brand <=50, Bullet <=256; từ cấm theo nhóm (thương hiệu, người nổi tiếng,
+  công dụng y tế, thù ghét, lời quảng cáo). Cột uspto = link tra câu chữ design; ban_quyen để Claude soát.
 
 Chạy:
   python merch_tieu_de.py anh.png                 -> in ra màn hình
@@ -35,14 +37,34 @@ TU_SAN_PHAM = {"shirt", "shirts", "tshirt", "tshirts", "t-shirt", "t-shirts", "t
                "hats", "mug", "mugs", "sticker", "stickers", "decal", "jacket", "long", "sleeve", "v-neck"}
 TU_NOI = {"i", "i'm", "im", "a", "an", "the", "of", "my", "is", "to", "and", "with", "in", "on", "it", "that",
           "this", "be", "you", "your", "me", "what", "do", "at", "by", "or", "are", "if", "not", "near", "under"}
-# Thương hiệu / lời cấm. Danh sách mồi — vẫn phải soát bản quyền (skill soat-ban-quyen) trước khi đăng.
-TU_CAM = [
-    "disney", "marvel", "pixar", "star wars", "harry potter", "pokemon", "hello kitty", "barbie", "lego",
-    "nike", "adidas", "gucci", "louis vuitton", "chanel", "taylor swift", "nfl", "nba", "mlb", "nhl",
-    "super bowl", "olympic", "coca cola", "minecraft", "fortnite", "mickey", "snoopy", "grinch", "bluey",
-    "yeti", "stanley", "carhartt", "harley", "jeep", "ford", "dewalt", "milwaukee", "snap-on", "john deere",
-    "budweiser", "jack daniels", "punisher", "yellowstone", "amazon", "prime",
-]
+# Từ cấm theo nhóm. Danh sách mồi — câu chữ design vẫn phải tra USPTO + skill soat-ban-quyen trước khi đăng.
+# Chỉ để tên riêng dễ nhận; từ thông dụng trùng tên hãng (dodge, vans, craftsman, giants...) bỏ ra để khỏi báo nhầm.
+NHOM_CAM = {
+    "từ thương hiệu": [
+        "disney", "marvel", "pixar", "star wars", "harry potter", "hogwarts", "pokemon", "hello kitty", "barbie",
+        "lego", "nike", "adidas", "under armour", "the north face", "patagonia", "levi's", "levis", "crocs",
+        "gucci", "louis vuitton", "chanel", "playboy", "nfl", "nba", "mlb", "nhl", "ncaa", "nascar", "wwe", "ufc",
+        "pga", "fifa", "espn", "super bowl", "olympic", "olympics", "coca cola", "coca-cola", "pepsi", "starbucks",
+        "dunkin", "mcdonald's", "mcdonalds", "red bull", "monster energy", "mountain dew", "budweiser", "busch",
+        "coors", "jack daniels", "jack daniel's", "fireball", "tito's", "minecraft", "fortnite", "roblox",
+        "mickey", "minnie", "snoopy", "peanuts gang", "garfield", "spongebob", "sesame street", "looney tunes",
+        "scooby", "batman", "superman", "spider-man", "spiderman", "avengers", "punisher", "grinch", "bluey",
+        "jurassic park", "star trek", "game of thrones", "stranger things", "grey's anatomy", "yellowstone",
+        "duck dynasty", "netflix", "yeti", "stanley", "carhartt", "harley", "harley-davidson", "jeep", "ford",
+        "chevy", "chevrolet", "ferrari", "porsche", "tesla", "john deere", "kubota", "dewalt", "milwaukee",
+        "snap-on", "makita", "ryobi", "stihl", "husqvarna", "klein tools", "lincoln electric", "realtree",
+        "mossy oak", "glock", "remington", "boy scouts", "girl scouts", "amazon", "prime",
+        "kansas city chiefs", "packers", "steelers", "49ers", "seahawks", "buccaneers", "dallas cowboys",
+        "new england patriots", "yankees", "dodgers", "red sox", "lakers", "celtics",
+    ],
+    "người nổi tiếng/chính trị": [
+        "taylor swift", "beyonce", "elvis", "marilyn monroe", "michael jordan", "air jordan", "lebron",
+        "dolly parton", "trump", "biden", "kamala", "obama", "maga", "let's go brandon", "lets go brandon",
+    ],
+    "công dụng y tế": ["cure", "cures", "heals", "fda", "covid", "vaccine", "prevents", "anti-anxiety"],
+    "thù ghét": ["nazi", "kkk", "swastika", "white power"],
+}
+TU_CAM = [t for ds in NHOM_CAM.values() for t in ds]
 TU_QUANG_CAO = ["best seller", "bestseller", "best selling", "sale", "discount", "free shipping",
                 "limited time", "#1", "100%", "guarantee", "top rated", "official", "licensed"]
 
@@ -250,9 +272,10 @@ def chu_chinh(dong, toi_da=40, nganh=""):
 
 
 # ---------------- từ khoá Amazon ----------------
-def _goi_y(prefix):
-    url = ("https://completion.amazon.com/api/2017/suggestions?mid=ATVPDKIKX0DER&alias=fashion&prefix="
-           + urllib.parse.quote(prefix))
+def _goi_y(prefix, alias="aps"):
+    """Ô gợi ý Amazon Mỹ. alias=fashion chỉ trả 1-3 câu, aps (mọi ngành) trả 10 (đo 05/11/2026)."""
+    url = ("https://completion.amazon.com/api/2017/suggestions?mid=ATVPDKIKX0DER&limit=11&alias=" + alias
+           + "&prefix=" + urllib.parse.quote(prefix))
     req = urllib.request.Request(url, headers={"User-Agent": "EtsyDesignTool/1.0"})
     with urllib.request.urlopen(req, timeout=10) as r:
         return [s["value"] for s in json.load(r).get("suggestions", [])]
@@ -267,7 +290,7 @@ def goi_y_amazon(nganh, lam_moi=False):
             dem = json.load(open(DEM, encoding="utf-8"))
         except (OSError, ValueError):
             dem = {}
-    if not lam_moi and k in dem and time.time() - dem[k]["luc"] < 14 * 86400:
+    if not lam_moi and k in dem and dem[k].get("ban") == 2 and time.time() - dem[k]["luc"] < 14 * 86400:
         return dem[k]["cau"], "amazon (đệm)"
     tien_to = [k, k + " shirt", "funny " + k, k + " gifts", k + " gifts for", k + " shirt for",
                k + " t shirt", k + " hoodie", k + " shirt funny", "retired " + k, k + " dad", k + " mom",
@@ -276,7 +299,7 @@ def goi_y_amazon(nganh, lam_moi=False):
     loi = 0
     for p in tien_to:
         try:
-            for s in _goi_y(p):
+            for s in _goi_y(p, "fashion") + _goi_y(p, "aps"):
                 if s not in cau:
                     cau.append(s)
         except Exception:
@@ -286,7 +309,7 @@ def goi_y_amazon(nganh, lam_moi=False):
         time.sleep(0.25)
     if not cau:
         return [], "dựng sẵn (không gọi được Amazon)"
-    dem[k] = {"luc": time.time(), "cau": cau}
+    dem[k] = {"luc": time.time(), "cau": cau, "ban": 2}
     os.makedirs(TAM, exist_ok=True)
     tmp = DEM + ".tmp"
     json.dump(dem, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -337,6 +360,104 @@ def tu_khoa(nganh, cau):
     for i, w in enumerate(TU_KHOA_SAN):  # luôn có mặt, đứng sau từ Amazon thật
         diem.setdefault(w, 0.5 - i * 0.01)
     return [w for w, _ in sorted(diem.items(), key=lambda x: -x[1])]
+
+
+# Từ được phép trong cụm từ khoá đưa vào bullet (ngoài tên nghề + TU_DUOC): chặn tên hãng, đồ nghề lọt vào
+TU_CUM = {"for", "a", "and", "the", "gift", "gifts", "men", "women", "him", "her", "new", "male", "female",
+          "coworker", "coworkers", "boss", "friend", "son", "daughter", "grandma", "nana", "papa", "father",
+          "mother", "lover", "lovers", "gag", "work", "of", "year", "first"}
+NAM = {"for men", "for him", "for dad", "dad", "husband", "grandpa", "male", "papa", "father", "son"}
+NU = {"for women", "for her", "for mom", "mom", "wife", "grandma", "nana", "female", "mother", "daughter"}
+
+
+DIP_LE = {"christmas", "halloween", "thanksgiving", "valentines", "easter", "graduation"}
+
+
+def _token(tu):
+    """Gộp 'for X' thành một từ như tu_khoa() làm."""
+    ra, j = [], 0
+    while j < len(tu):
+        if tu[j] == "for" and j + 1 < len(tu) and tu[j + 1] in CHO_AI:
+            ra.append("for " + tu[j + 1])
+            j += 2
+        else:
+            ra.append(tu[j])
+            j += 1
+    return ra
+
+
+def cum_tu_khoa(nganh, cau, tk=None, nu=None, toi_da=8):
+    """Cụm khách gõ thật (giữ thứ tự Amazon) đã bỏ chữ loại hàng, chỉ gồm từ an toàn, hợp giới tính và từ khoá đang tick.
+    Trả [(cụm, loại)] — loại 'qua' (có gift), 'nguoi' (tận cùng bằng nghề/người), 'dip' (mở đầu bằng dịp lễ)."""
+    ng = nganh.lower().split()
+    if not ng:
+        return []
+    duoi_nghe = {ng[-1], ng[-1] + "s", so_nhieu(nganh).lower().split()[-1]}
+    cho = set(ng) | duoi_nghe | TU_DUOC | TU_CUM | CHO_AI
+    tk_set = set(tk) if tk is not None else None
+    ra, da = [], set()
+    for c in cau:
+        tu = re.findall(r"[a-z']+", c.lower().replace("t shirt", "tshirt").replace("t-shirt", "tshirt"))
+        if not NGU_CANH & set(tu) or not (duoi_nghe & set(tu)):
+            continue
+        giu, hong = [], False
+        for j, w in enumerate(tu):
+            if w in TU_SAN_PHAM:
+                if j + 1 < len(tu) and tu[j + 1] == "for" and "gift" not in c and "gifts" not in c:
+                    hong = True  # "nurse shirt for women" bỏ chữ áo thành "nurse for women" -> sai nghĩa
+                continue
+            giu.append(w)
+        if hong or len(giu) < 2 or giu[-1] in ("for", "and", "a", "the", "of"):
+            continue
+        if any(w not in cho for w in giu):
+            continue
+        if any(w in ("men", "women") and (j == 0 or giu[j - 1] != "for") for j, w in enumerate(giu)):
+            continue
+        giu = ["gifts" if w == "gift" else w for w in giu]
+        cum = " ".join(giu)
+        if any(_co_tu(cum, t) for t in TU_CAM):
+            continue
+        tok = _token(giu)
+        if nu is not None and set(tok) & (NAM if nu else NU):
+            continue
+        if tk_set is not None and any(t in TU_DUOC or t.startswith("for ") for t in tok
+                                      if t not in set(ng) | duoi_nghe | {"gifts"}) and \
+                not all(t in tk_set for t in tok if (t in TU_DUOC or t.startswith("for ")) and
+                        t not in set(ng) | duoi_nghe | {"gifts"}):
+            continue
+        khoa = frozenset(giu)
+        if khoa in da or len(set(giu) - set(ng) - duoi_nghe) == 0:
+            continue
+        da.add(khoa)
+        if giu[0] in DIP_LE:
+            loai = "dip"  # "christmas nurse" -> "Christmas nurse outfits"
+        elif "gifts" in giu:
+            loai = "qua"
+        elif giu[-1] in duoi_nghe | {"dad", "mom", "wife", "husband", "grandpa", "crew", "squad", "team"}:
+            loai = "nguoi"
+        else:
+            continue  # "welder funny", "nurse humor"... đặt vào câu nghe gượng -> bỏ
+        hoa = {w.lower(): w for w in nganh.split() if w.isupper() or w.lower() in MAU_GIU_HOA}
+        hoa.update({w + "s": hoa[w] + "s" for w in list(hoa)})
+        cum = " ".join(w.capitalize() if w in DIP_LE else hoa.get(w, w) for w in cum.split())
+        cum = re.sub(r"\b(veterans|fathers|mothers|valentines|memorial|independence|labor) day\b",
+                     lambda m: m.group(1).capitalize() + " Day", cum)
+        ra.append((cum, loai))
+        if len(ra) >= toi_da:
+            break
+    return ra
+
+
+def _chon(chu, n):
+    """Chọn biến thể câu ổn định theo chữ design -> mỗi design một kiểu câu, chạy lại vẫn y nguyên."""
+    import zlib
+    return zlib.crc32((chu or "").lower().encode("utf-8")) % n
+
+
+def link_uspto(chu):
+    """Trang tra nhãn hiệu Mỹ cho câu chữ design (tự động gọi bị tường lửa AWS chặn -> mở trên trình duyệt)."""
+    return "https://tmsearch.uspto.gov/search/search-results?query=" + urllib.parse.quote(chu or "") + \
+        "&section=default"
 
 
 # ---------------- ghép ----------------
@@ -394,42 +515,82 @@ def _cat(s, n=BULLET_MAX):
     return s + "."
 
 
-def tao_bullets(chu, nganh, tk):
-    nhieu = so_nhieu(nganh)
+def _boi_canh(nganh, tk):
     hai_huoc = any(w in tk[:8] for w in ("funny", "humor", "sarcastic"))
     nu = "for women" in tk and ("for men" not in tk or tk.index("for women") < tk.index("for men"))
+    return hai_huoc, nu
+
+
+def tao_bullets(chu, nganh, tk, cum=None):
+    """2 bullet. cum = cum_tu_khoa(...) -> rải cụm khách gõ thật (mỗi cụm dùng 1 lần), câu đổi theo design."""
+    nhieu = so_nhieu(nganh)
+    hai_huoc, nu = _boi_canh(nganh, tk)
     nguoi = "mom, wife, coworker or best friend" if nu else "dad, husband, coworker or best friend"
     dip = [d for d in ("christmas", "birthday", "retirement", "appreciation") if d in tk[:20]]
     dip_txt = {"christmas": "Christmas", "birthday": "birthdays", "retirement": "retirement",
                "appreciation": "appreciation week"}
     dip_s = ", ".join(dip_txt[d] for d in dip[:3]) or "birthdays, Christmas and retirement"
     trich = f'"{chu}" ' if chu else ""
-    b1 = (f"{trich}design made for proud {nhieu}. "
-          f"{'A funny' if hai_huoc else 'A great'} {nganh} gift for your {nguoi} on {dip_s}, "
-          f"or any day they deserve a little recognition for the work they do.")
-    b2 = (f"Wear it at work, on your day off or at the next crew get-together. "
-          f"{'Perfect for ' + nhieu + ' with a sense of humor' if hai_huoc else 'Perfect for ' + nhieu}"
-          f" who love what they do and want everyone to know it.")
+    qua = [c for c, l in (cum or []) if l == "qua"]
+    ng = [c for c, l in (cum or []) if l == "nguoi"]
+    khac = [c for c, l in (cum or []) if l == "dip"]
+    v = _chon(chu, 3)
+    vui = "funny" if hai_huoc else "great"
+    if qua:
+        b1 = [f"{trich}design made for proud {nhieu}. A {vui} pick if you are shopping for {qua[0]} - "
+              f"made for your {nguoi} on {dip_s}.",
+              f"{trich}design for {nhieu} who love what they do. One of those {qua[0]} that "
+              f"{'gets a real laugh' if hai_huoc else 'gets noticed'} - great for your {nguoi} on {dip_s}.",
+              f"Give your {nguoi} this {trich}design on {dip_s}. It stands out among {qua[0]} "
+              f"for anyone proud of the work they do."][v]
+    else:
+        b1 = (f"{trich}design made for proud {nhieu}. "
+              f"{'A funny' if hai_huoc else 'A great'} {nganh} gift for your {nguoi} on {dip_s}, "
+              f"or any day they deserve a little recognition for the work they do.")
+    mo2 = ["Wear it at work, on your day off or at the next crew get-together.",
+           "Wear it on shift, after hours or at the next family barbecue.",
+           "Wear it to work, on weekends or anywhere you want to show what you do."][v]
+    if ng:
+        ai = ng[0] + (f" or {ng[1]}" if len(ng) > 1 else "")
+        b2 = f"{mo2} Made for any {ai} {'with a sense of humor' if hai_huoc else 'who loves the job'}."
+        if khac:
+            b2 += f" Great for {khac[0]} outfits and everyday wear."
+    else:
+        b2 = (f"{mo2} {'Perfect for ' + nhieu + ' with a sense of humor' if hai_huoc else 'Perfect for ' + nhieu}"
+              f" who love what they do and want everyone to know it.")
+        if khac:
+            b2 += f" Great for {khac[0]} outfits too."
     return _cat(b1), _cat(b2)
 
 
-def tao_mo_ta(chu, nganh, tk):
-    """Product description (<=2000): 3 đoạn ngắn, KHÔNG nhắc loại sản phẩm (Merch cảnh báo 'product types')."""
+def tao_mo_ta(chu, nganh, tk, cum=None):
+    """Product description (<=2000): 3 đoạn ngắn, KHÔNG nhắc loại sản phẩm (Merch cảnh báo 'product types').
+    Dùng các cụm từ khoá chưa có trong bullet (qua[1:], nguoi[2:], dip[1:])."""
     nhieu = so_nhieu(nganh)
-    hai_huoc = any(w in tk[:8] for w in ("funny", "humor", "sarcastic"))
-    nu = "for women" in tk and ("for men" not in tk or tk.index("for women") < tk.index("for men"))
+    hai_huoc, nu = _boi_canh(nganh, tk)
     nguoi = "mom, wife, sister, coworker or best friend" if nu else "dad, husband, brother, coworker or best friend"
     dip = [d for d in ("christmas", "birthday", "retirement", "appreciation") if d in tk[:20]]
     dip_txt = {"christmas": "Christmas", "birthday": "a birthday", "retirement": "retirement",
                "appreciation": "appreciation week"}
     dip_s = ", ".join(dip_txt[d] for d in dip[:3]) or "a birthday, Christmas or retirement"
+    qua = [c for c, l in (cum or []) if l == "qua"][1:3]
+    ng = [c for c, l in (cum or []) if l == "nguoi"][2:4]
+    khac = [c for c, l in (cum or []) if l == "dip"][1:3]
     mo = f'"{chu}" is a bold design' if chu else "A bold design"
     p1 = (f"{mo} made for {nhieu} who take pride in what they do. "
           f"{'It brings the kind of humor only people in the trade really get.' if hai_huoc else 'It says it all without a single word from you.'}")
-    p2 = (f"Looking for something special for the {nganh} in your life? It makes a thoughtful pick for your "
-          f"{nguoi} - for {dip_s}, a new job, or just to say thanks for the hard work.")
+    if qua:
+        p2 = (f"Looking for {' or '.join(qua)}? It makes a thoughtful pick for your {nguoi} - for {dip_s}, "
+              f"a new job, or just to say thanks for the hard work.")
+    else:
+        p2 = (f"Looking for something special for the {nganh} in your life? It makes a thoughtful pick for your "
+              f"{nguoi} - for {dip_s}, a new job, or just to say thanks for the hard work.")
     p3 = ("Wear it on the job, on your day off or at the next crew get-together "
           "and let everyone know what you do.")
+    if ng:
+        p3 = f"Whether you are a {' or a '.join(ng)}, wear it on the job, on your day off or anywhere in between."
+    if khac:
+        p3 += f" Also a fun pick for {' and '.join(khac)} outfits."
     return _cat(" ".join([p1, p2, p3]), MO_TA_MAX)
 
 
@@ -449,9 +610,10 @@ def soat(kq):
         if o in kq and len(kq[o]) > n:
             loi.append(f"{o} {len(kq[o])}/{n} ký tự")
     tat = " ".join(kq[o] for o in o_co).lower()
-    for t in TU_CAM:
-        if _co_tu(tat, t):
-            loi.append(f"từ thương hiệu: {t}")
+    for nhom, ds in NHOM_CAM.items():
+        for t in ds:
+            if _co_tu(tat, t):
+                loi.append(f"{nhom}: {t}")
     for t in TU_QUANG_CAO:
         if t in tat:
             loi.append(f"lời quảng cáo cấm: {t}")
@@ -468,21 +630,31 @@ def soat(kq):
     return loi
 
 
-def tao(chu, nganh, tk, brand=None):
+def tao(chu, nganh, tk, brand=None, cau=None):
+    """cau = câu gợi ý Amazon thô (goi_y_amazon) -> bullet/mô tả dùng cụm khách gõ thật; None = văn mẫu."""
     kq = {"title": tao_title(chu, nganh, tk), "brand": brand or tao_brand(nganh, tk)}
-    kq["bullet1"], kq["bullet2"] = tao_bullets(chu, nganh, tk)
-    kq["description"] = tao_mo_ta(chu, nganh, tk)
+    cum = None
+    if cau:
+        cum = cum_tu_khoa(nganh, cau, tk, _boi_canh(nganh, tk)[1])
+        cum = [(c, l) for c, l in cum if c.lower() not in kq["title"].lower()]
+    kq["bullet1"], kq["bullet2"] = tao_bullets(chu, nganh, tk, cum)
+    kq["description"] = tao_mo_ta(chu, nganh, tk, cum)
+    kq["uspto"] = link_uspto(chu)
     kq["loi"] = soat(kq)
     return kq
 
 
-def lam_anh(duong, nganh, tk, brand=None):
+def lam_anh(duong, nganh, tk, brand=None, cau=None):
     dong = doc_chu(duong, nganh)
     chu = chu_chinh(dong, nganh=nganh)
-    kq = tao(chu, nganh, tk, brand)
+    kq = tao(chu, nganh, tk, brand, cau)
     kq.update(file=os.path.basename(duong), chu=chu, ocr=" | ".join(d[0] for d in dong),
               ten_file=" | ".join(chu_tu_ten_file(duong)))
     return kq
+
+
+# Cột CSV: ban_quyen để trống = chưa soát; Claude (skill soat-ban-quyen) ghi 🔴/🟡/🟢 + lý do vào đây
+COT_CSV = ["file", "chu", "title", "brand", "bullet1", "bullet2", "description", "loi", "ban_quyen", "uspto", "ocr"]
 
 
 def main():
@@ -499,21 +671,22 @@ def main():
     tk = tu_khoa(nganh, cau)
     print(f"Nghề: {nganh} | từ khoá ({nguon}): {', '.join(tk[:12])}")
     if os.path.isfile(a.duong):
-        kq = lam_anh(a.duong, nganh, tk, a.brand)
+        kq = lam_anh(a.duong, nganh, tk, a.brand, cau)
         for o in ("chu", "title", "brand", "bullet1", "bullet2", "description"):
             print(f"{o.upper():8} ({len(kq[o])}): {kq[o]}")
         print("Cảnh báo:", "; ".join(kq["loi"]) or "không")
+        print("Tra nhãn hiệu USPTO:", kq["uspto"])
         return
     fs = sorted(f for f in os.listdir(a.duong) if f.lower().endswith(DUOI_ANH))
     ra = os.path.join(a.duong, "_MERCH.csv")
-    cot = ["file", "chu", "title", "brand", "bullet1", "bullet2", "description", "loi", "ocr", "ten_file"]
+    cot = COT_CSV + ["ten_file"]
     tmp = ra + ".tmp"
     with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=cot)
         w.writeheader()
         for i, fn in enumerate(fs, 1):
             try:
-                kq = lam_anh(os.path.join(a.duong, fn), nganh, tk, a.brand)
+                kq = lam_anh(os.path.join(a.duong, fn), nganh, tk, a.brand, cau)
             except Exception as e:
                 kq = {"file": fn, "loi": [f"lỗi đọc ảnh: {e}"], "title": "", "brand": "", "bullet1": "",
                       "bullet2": "", "description": "", "chu": "", "ocr": "", "ten_file": ""}

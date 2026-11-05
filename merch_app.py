@@ -17,6 +17,7 @@ import csv
 import os
 import sys
 import threading
+import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
@@ -47,7 +48,7 @@ class App(tk.Tk):
         self.ds, self.i = [], 0
         self.ocr = {}  # duong -> (dong OCR, goi y ten file)
         self.sua = {}  # duong -> chu chinh anh da sua
-        self.tk_list, self.chon = [], {}
+        self.tk_list, self.chon, self.cau = [], {}, []
         self.nganh_da_lay = None
         self.anh_tk = None
         self._hen = None
@@ -110,8 +111,11 @@ class App(tk.Tk):
         o.pack(side="left", pady=(14, 0))
         gd.Nut(o, "Lấy từ khoá Amazon", lambda: self._lay_tu_khoa(lam_moi=True), "phu", cao=30, co=9).pack()
 
-        tk.Label(p, text="Chữ chính trên design (sửa cho đúng — tiêu đề viết theo ô này)", bg=gd.KEM,
-                 fg=gd.NAVY, font=(gd.FONT, 9, "bold")).pack(anchor="w", pady=(12, 0))
+        h2 = tk.Frame(p, bg=gd.KEM)
+        h2.pack(fill="x", pady=(12, 0))
+        tk.Label(h2, text="Chữ chính trên design (sửa cho đúng — tiêu đề viết theo ô này)", bg=gd.KEM,
+                 fg=gd.NAVY, font=(gd.FONT, 9, "bold")).pack(side="left", anchor="s")
+        gd.Nut(h2, "Tra nhãn hiệu USPTO", self._tra_uspto, "phu", cao=26, co=9).pack(side="right")
         tk.Entry(p, textvariable=self.v_chu, font=(gd.FONT, 13), relief="solid", bd=1).pack(fill="x")
         self.k_goi_y = tk.Frame(p, bg=gd.KEM)
         self.k_goi_y.pack(fill="x", pady=(4, 0))
@@ -138,7 +142,8 @@ class App(tk.Tk):
         self.l_loi = tk.Label(p, text="", bg=gd.KEM, fg=gd.DO, font=(gd.FONT, 9, "bold"), justify="left",
                               wraplength=720)
         self.l_loi.pack(anchor="w", pady=(8, 0))
-        tk.Label(p, text="Nhắc: soát bản quyền design + chữ trước khi đăng (Merch khoá tài khoản vì vi phạm).",
+        tk.Label(p, text="Nhắc: bấm \"Tra nhãn hiệu USPTO\" cho câu chữ design (LIVE ở nhóm quần áo = không dùng). "
+                         "Xuất CSV rồi nhờ Claude \"soát bản quyền _MERCH.csv\" trước khi đăng.",
                  bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(anchor="w")
 
     # ---------------- tệp ----------------
@@ -246,7 +251,7 @@ class App(tk.Tk):
         def chay():
             cau, nguon = mt.goi_y_amazon(nganh, lam_moi)
             tk_ = mt.tu_khoa(nganh, cau)
-            self.after(0, lambda: self._ve_tu_khoa(tk_, nguon, len(cau)))
+            self.after(0, lambda: (setattr(self, "cau", cau), self._ve_tu_khoa(tk_, nguon, len(cau))))
         threading.Thread(target=chay, daemon=True).start()
 
     def _ve_tu_khoa(self, tk_, nguon, n):
@@ -279,7 +284,8 @@ class App(tk.Tk):
         chu = self.v_chu.get().strip()
         if chu.startswith("("):
             return
-        kq = mt.tao(chu, self.v_nganh.get().strip(), self._tk_chon(), self.v_brand.get().strip() or None)
+        kq = mt.tao(chu, self.v_nganh.get().strip(), self._tk_chon(), self.v_brand.get().strip() or None,
+                    self.cau)
         for k, *_ in O_RA:
             t = self.o_ra[k]
             t.delete("1.0", "end")
@@ -298,6 +304,13 @@ class App(tk.Tk):
         self.l_loi.config(text=("⚠ " + " · ".join(loi)) if loi else "✓ Đạt giới hạn Merch, không thấy từ cấm",
                           fg=gd.DO if loi else "#2E7D4F")
 
+    def _tra_uspto(self):
+        chu = self.v_chu.get().strip()
+        if not chu or chu.startswith("("):
+            messagebox.showinfo("Merch Title", "Chưa có chữ chính để tra.")
+            return
+        webbrowser.open(mt.link_uspto(chu))
+
     def _chep(self, k):
         self.clipboard_clear()
         self.clipboard_append(self._lay(k))
@@ -310,12 +323,12 @@ class App(tk.Tk):
             return
         self._luu_sua()
         ds, nganh = list(self.ds), self.v_nganh.get().strip()
-        tk_, brand = self._tk_chon(), self.v_brand.get().strip() or None
+        tk_, brand, cau = self._tk_chon(), self.v_brand.get().strip() or None, list(self.cau)
         ra = os.path.join(os.path.dirname(ds[self.i]), "_MERCH.csv")
         self.nut_csv.bat(False)
 
         def chay():
-            cot = ["file", "chu", "title", "brand", "bullet1", "bullet2", "description", "loi", "ocr"]
+            cot = mt.COT_CSV
             hang = []
             for j, d in enumerate(ds, 1):
                 self.after(0, lambda j=j: self.l_csv.config(text=f"Đang làm {j} / {len(ds)}..."))
@@ -324,7 +337,7 @@ class App(tk.Tk):
                         self.ocr[d] = (mt.doc_chu(d, nganh), mt.chu_tu_ten_file(d))
                     dong = self.ocr[d][0]
                     chu = self.sua.get(d) or mt.chu_chinh(dong, nganh=nganh)
-                    kq = mt.tao(chu, nganh, tk_, brand)
+                    kq = mt.tao(chu, nganh, tk_, brand, cau)
                     kq.update(file=os.path.basename(d), chu=chu, ocr=" | ".join(d[0] for d in dong))
                 except Exception as e:
                     kq = {"file": os.path.basename(d), "loi": [f"lỗi: {e}"]}
