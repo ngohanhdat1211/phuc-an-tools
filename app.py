@@ -431,7 +431,7 @@ class App(tk.Tk):
     def _chay_redesign(self, ds, so):
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
         co = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        tong, xong = len(ds) * so, 0
+        tong, xong, het_han = len(ds) * so, 0, False
         for k, p in enumerate(ds, 1):
             self.q.put(("log", f"===== Redesign [{k}/{len(ds)}] {p}"))
             self._bao_dang(p, xong + 1, tong, 1, 1)
@@ -455,8 +455,11 @@ class App(tk.Tk):
                         pass
                     self.q.put(("ket", (os.path.dirname(ra), None)))
                 elif "LỖI" in dong or "Không thấy" in dong:
+                    het_han = het_han or "hết hạn mức" in dong
                     self.q.put(("loi", dong))
             tt.wait()
+            if het_han:
+                break  # hết hạn mức Max: dừng, các design còn lại chạy lại sau khi hạn mức hồi
         self.q.put(("xong", None))
 
     def _bao_dang(self, mockup, i, n, k, tong):
