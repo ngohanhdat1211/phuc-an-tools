@@ -415,9 +415,12 @@ class App(tk.Tk):
         if not ds:
             return
         so = simpledialog.askinteger("Redesign", "Mỗi design làm bao nhiêu mẫu mới? (1-5)\n"
-                                     "Mỗi mẫu ~2 phút, dùng hạn mức gói Claude Max.", initialvalue=1,
+                                     "Dùng hạn mức gói Claude Max (bước sau chọn mức tiết kiệm).", initialvalue=1,
                                      minvalue=1, maxvalue=5, parent=self)
         if not so:
+            return
+        mh = self._chon_mo_hinh()
+        if not mh:
             return
         self.dang_chay = True
         self.ket_qua, self.anh_luoi, self.dem_loi = [], [], 0
@@ -426,9 +429,33 @@ class App(tk.Tk):
         self.nut_rd.doi_chu("Claude đang vẽ…")
         self.thanh.dat(0)
         self._ve_luoi()
-        threading.Thread(target=self._chay_redesign, args=(list(ds), so), daemon=True).start()
+        threading.Thread(target=self._chay_redesign, args=(list(ds), so, mh), daemon=True).start()
 
-    def _chay_redesign(self, ds, so):
+    MUC_RD = [("haiku", "Tiết kiệm (Haiku)", "đơn giản, ~30 giây, gần như không tốn hạn mức (~1/20 Opus)"),
+              ("sonnet", "Cân bằng (Sonnet) — nên dùng", "khá đẹp, ~1 phút, ~1/2 hạn mức Opus"),
+              ("opus", "Đẹp nhất (Opus)", "nhiều chi tiết nhất, ~2 phút, tốn hạn mức nhất")]
+
+    def _chon_mo_hinh(self):
+        """Hộp chọn mức chất lượng / hạn mức Max. Trả 'haiku'/'sonnet'/'opus' hoặc None nếu đóng."""
+        hop = tk.Toplevel(self)
+        hop.title("Chọn mức Redesign")
+        hop.transient(self)
+        hop.resizable(False, False)
+        kq = {"v": None}
+        tk.Label(hop, text="Dùng mô hình nào?", font=("Segoe UI", 11, "bold")).pack(padx=18, pady=(14, 6), anchor="w")
+        for ma, ten, ghi in self.MUC_RD:
+            def chon(m=ma):
+                kq["v"] = m
+                hop.destroy()
+            tk.Button(hop, text=f"{ten}\n{ghi}", justify="left", anchor="w", width=58, command=chon,
+                      font=("Segoe UI", 10), padx=10, pady=6).pack(padx=18, pady=4)
+        tk.Label(hop, text="Gợi ý: làm nhiều mẫu thử ý bằng Haiku, ưng ý nào thì làm lại bằng Opus.",
+                 fg="#555").pack(padx=18, pady=(4, 14), anchor="w")
+        hop.grab_set()
+        self.wait_window(hop)
+        return kq["v"]
+
+    def _chay_redesign(self, ds, so, mh="sonnet"):
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
         co = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         tong, xong, het_han = len(ds) * so, 0, False
@@ -436,7 +463,7 @@ class App(tk.Tk):
             self.q.put(("log", f"===== Redesign [{k}/{len(ds)}] {p}"))
             self._bao_dang(p, xong + 1, tong, 1, 1)
             try:
-                tt = subprocess.Popen([python_exe(), "-u", REDESIGN, p, "--so", str(so)], stdout=subprocess.PIPE,
+                tt = subprocess.Popen([python_exe(), "-u", REDESIGN, p, "--so", str(so), "--mo-hinh", mh], stdout=subprocess.PIPE,
                                       stderr=subprocess.STDOUT, env=env, creationflags=co, encoding="utf-8",
                                       errors="replace", cwd=GOC)
             except OSError as e:

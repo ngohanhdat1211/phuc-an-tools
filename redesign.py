@@ -82,6 +82,10 @@ def goi_claude(claude, cau, cwd, them_thu_muc):
     lenh = [claude, "-p", cau, "--output-format", "json", "--tools", "Read,Write", "--allowedTools", "Read,Write",
             "--strict-mcp-config", "--setting-sources", "", "--add-dir", them_thu_muc,
             "--system-prompt", "You are a senior t-shirt graphic designer. Work only with the files named in the task."]
+    if MO_HINH.get("model"):
+        lenh += ["--model", MO_HINH["model"]]
+    if MO_HINH.get("effort"):
+        lenh += ["--effort", MO_HINH["effort"]]
     r = subprocess.run(lenh, cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8", timeout=900)
     try:
         d = json.loads(r.stdout)
@@ -89,6 +93,8 @@ def goi_claude(claude, cau, cwd, them_thu_muc):
         raise RuntimeError((r.stderr or r.stdout)[-500:])
     if d.get("is_error"):
         raise RuntimeError(str(d.get("result"))[:500])
+    if os.environ.get("RD_DEBUG"):
+        print("  mo hinh:", list((d.get("modelUsage") or {}).keys()), flush=True)
     return d.get("result", ""), d.get("total_cost_usd", 0)
 
 

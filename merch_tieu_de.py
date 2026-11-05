@@ -550,11 +550,17 @@ def la_mua_dip(w):
     return w in TU_MUA or w in TU_DIP
 
 
+# Người nhận cụ thể: đưa vào title làm hẹp khách (Dad loại người mua cho mẹ) -> chỉ dùng khi chữ design có từ đó
+NGUOI_NHAN = {"dad", "mom", "husband", "wife", "grandpa", "grandma", "papa", "nana", "father", "mother"}
+
+
 def tk_cho_title(tk, chu, cho_mua=False):
     """Bỏ từ mùa/dịp (trừ khi design nói về nó hoặc cho_mua=True) + chỉ giữ 1 từ hài hước xếp hạng cao nhất."""
     c = (chu or "").lower()
     ra, co_hai = [], False
     for w in tk:
+        if w in NGUOI_NHAN and not _co_tu(c, w):  # "Dad"/"Mom" chỉ vào title khi design nói về họ
+            continue
         goc = TU_MUA.get(w) or TU_DIP.get(w)
         if goc and not cho_mua and not any(g in c for g in goc):
             continue
@@ -631,17 +637,27 @@ def _cat(s, n=BULLET_MAX):
     return s + "."
 
 
-def _boi_canh(nganh, tk):
+def _boi_canh(nganh, tk, chu=""):
+    """gioi: 'nam' / 'nu' theo chữ design (dad, wife...) hoặc khi anh chỉ để tick 1 giới; còn lại 'ca' (nhắc cả hai)."""
     hai_huoc = any(w in tk[:8] for w in ("funny", "humor", "sarcastic"))
-    nu = "for women" in tk and ("for men" not in tk or tk.index("for women") < tk.index("for men"))
-    return hai_huoc, nu
+    c = (chu or "").lower()
+    co_nam = any(_co_tu(c, w) for w in ("dad", "husband", "grandpa", "papa", "father", "son", "man", "men", "him"))
+    co_nu = any(_co_tu(c, w) for w in ("mom", "wife", "grandma", "nana", "mother", "daughter", "woman", "women",
+                                       "her", "she", "girl", "lady"))
+    if co_nam != co_nu:
+        return hai_huoc, ("nam" if co_nam else "nu")
+    if ("for women" in tk) != ("for men" in tk):
+        return hai_huoc, ("nu" if "for women" in tk else "nam")
+    return hai_huoc, "ca"
 
 
 def tao_bullets(chu, nganh, tk, cum=None):
     """2 bullet. cum = cum_tu_khoa(...) -> rải cụm khách gõ thật (mỗi cụm dùng 1 lần), câu đổi theo design."""
     nhieu = so_nhieu(nganh)
-    hai_huoc, nu = _boi_canh(nganh, tk)
-    nguoi = "mom, wife, coworker or best friend" if nu else "dad, husband, coworker or best friend"
+    hai_huoc, gioi = _boi_canh(nganh, tk, chu)
+    nu = gioi == "nu"
+    nguoi = {"nu": "mom, wife, coworker or best friend", "nam": "dad, husband, coworker or best friend",
+             "ca": "dad, mom, husband, wife or coworker"}[gioi]
     dip = [d for d in ("christmas", "birthday", "retirement", "appreciation") if d in tk[:20]]
     dip_txt = {"christmas": "Christmas", "birthday": "birthdays", "retirement": "retirement",
                "appreciation": "appreciation week"}
@@ -684,8 +700,10 @@ def tao_mo_ta(chu, nganh, tk, cum=None):
     """Product description (<=2000): 3 đoạn ngắn, KHÔNG nhắc loại sản phẩm (Merch cảnh báo 'product types').
     Dùng các cụm từ khoá chưa có trong bullet (qua[1:], nguoi[2:], dip[1:])."""
     nhieu = so_nhieu(nganh)
-    hai_huoc, nu = _boi_canh(nganh, tk)
-    nguoi = "mom, wife, sister, coworker or best friend" if nu else "dad, husband, brother, coworker or best friend"
+    hai_huoc, gioi = _boi_canh(nganh, tk, chu)
+    nu = gioi == "nu"
+    nguoi = {"nu": "mom, wife, sister, coworker or best friend", "nam": "dad, husband, brother, coworker or best friend",
+             "ca": "dad, mom, husband, wife, coworker or best friend"}[gioi]
     dip = [d for d in ("christmas", "birthday", "retirement", "appreciation") if d in tk[:20]]
     dip_txt = {"christmas": "Christmas", "birthday": "a birthday", "retirement": "retirement",
                "appreciation": "appreciation week"}
@@ -759,7 +777,8 @@ def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False, giong=None, ocr="")
     kq = {"title": tao_title(chu, nganh, tk, cho_mua=cho_mua), "brand": brand or tao_brand(nganh, tk)}
     cum = None
     if cau:
-        cum = cum_tu_khoa(nganh, cau, tk, _boi_canh(nganh, tk)[1])
+        gioi = _boi_canh(nganh, tk, chu)[1]
+        cum = cum_tu_khoa(nganh, cau, tk, None if gioi == "ca" else gioi == "nu")
         cum = [(c, l) for c, l in cum if c.lower() not in kq["title"].lower()]
     kq["bullet1"], kq["bullet2"] = tao_bullets(chu, nganh, tk, cum)
     kq["description"] = tao_mo_ta(chu, nganh, tk, cum)
