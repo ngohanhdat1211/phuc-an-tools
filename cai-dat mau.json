@@ -1,0 +1,6 @@
+{
+  "_huong-dan": "Doi ten file nay thanh cai-dat.json, dat trong thu muc mockup. Ten = dau ten file mockup. Khoa: vung, xoay, che, nen, nguong, giu-xam, bo",
+  "Ten Mockup Chup Lung Dinh Tay": {"vung": "240,100,750,735"},
+  "Ten Mockup Bi Nghieng": {"xoay": -14, "che": ["640,300,760,475"], "nen": "#d1d0d0"},
+  "Ten Mockup Khong Lam": {"bo": true}
+}

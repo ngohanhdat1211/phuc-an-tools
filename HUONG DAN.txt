@@ -1,0 +1,20 @@
+ETSY DESIGN TOOL - HUONG DAN NHANH
+
+1. Mo "Etsy Design Tool" ngoai Desktop.
+2. Bam "Them thu muc..." chon thu muc mockup (hoac keo tha thu muc vao bieu tuong Desktop).
+3. Bam BAT DAU. Xong bam "Mo to xem lai" de soat.
+
+Ket qua: <thu muc mockup>\Design Claude\<ten mockup>.png  (4200x4800, 300 dpi, nen trong suot)
+- Mau da co design trong thu muc con "Design" thi tu bo qua.
+- Mau da co file trong "Design Claude" thi bo qua; muon lam lai: tich "Lam lai" hoac xoa file do.
+- Ao den: tool tu xoa van vai. In len ao mau sang: tich "Giu phan den/xam toi".
+
+Mau kho (anh chup lung dinh tay/tuong, design nghieng): chep "cai-dat mau.json" vao thu muc
+mockup, doi ten thanh "cai-dat.json", sua theo mau ben trong:
+  vung  = x1,y1,x2,y2   chi lay design trong o nay (toa do pixel anh mockup)
+  xoay  = -14           xoay thang (am = cung chieu kim dong ho)
+  che   = ["x1,y1,x2,y2"]  to mau ao len cho dinh tay/tuong
+  nen   = "#d1d0d0"     ep mau ao
+  bo    = true          bo qua mau nay
+
+Luu y: soat tung file truoc khi in - chi tiet nho do AI ve lai khi phong to.

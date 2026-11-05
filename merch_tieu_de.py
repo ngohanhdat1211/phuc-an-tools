@@ -1,0 +1,528 @@
+r"""Viết Title / Brand / 2 Bullet cho Amazon Merch on Demand từ ảnh design.
+
+- Đọc chữ trên design (RapidOCR, chạy máy, không tốn tiền) + gợi ý từ tên file.
+- Từ khoá: ô gợi ý tìm kiếm Amazon (khách thật gõ), lưu đệm 14 ngày; mất mạng thì dùng bộ dựng sẵn.
+- Soát độ dài Merch: Title <=60, Brand <=50, Bullet <=256; từ cấm (thương hiệu, lời quảng cáo).
+
+Chạy:
+  python merch_tieu_de.py anh.png                 -> in ra màn hình
+  python merch_tieu_de.py "<thư mục design>"      -> <thư mục>\_MERCH.csv (mở bằng Excel)
+  --nganh "Electrician"   đặt tên nghề (mặc định đoán từ tên thư mục)
+  --brand "Ten Brand"     dùng 1 brand cố định
+"""
+import argparse
+import csv
+import json
+import os
+import re
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+GOC = os.path.dirname(os.path.abspath(__file__))
+TAM = os.path.join(os.path.dirname(GOC), "tam")
+if not os.path.isdir(TAM):
+    TAM = os.path.join(GOC, "tam")
+DEM = os.path.join(TAM, "merch_tu_khoa.json")
+DUOI_ANH = (".png", ".jpg", ".jpeg", ".webp")
+
+TITLE_MAX, BRAND_MAX, BULLET_MAX, MO_TA_MAX = 60, 50, 256, 2000
+
+# Merch tự gắn loại sản phẩm -> không nhét chữ áo vào title
+TU_SAN_PHAM = {"shirt", "shirts", "tshirt", "tshirts", "t-shirt", "t-shirts", "tee", "tees", "t", "hoodie",
+               "hoodies", "sweatshirt", "sweatshirts", "tank", "top", "apparel", "clothing", "socks", "hat",
+               "hats", "mug", "mugs", "sticker", "stickers", "decal", "jacket", "long", "sleeve", "v-neck"}
+TU_NOI = {"i", "i'm", "im", "a", "an", "the", "of", "my", "is", "to", "and", "with", "in", "on", "it", "that",
+          "this", "be", "you", "your", "me", "what", "do", "at", "by", "or", "are", "if", "not", "near", "under"}
+# Thương hiệu / lời cấm. Danh sách mồi — vẫn phải soát bản quyền (skill soat-ban-quyen) trước khi đăng.
+TU_CAM = [
+    "disney", "marvel", "pixar", "star wars", "harry potter", "pokemon", "hello kitty", "barbie", "lego",
+    "nike", "adidas", "gucci", "louis vuitton", "chanel", "taylor swift", "nfl", "nba", "mlb", "nhl",
+    "super bowl", "olympic", "coca cola", "minecraft", "fortnite", "mickey", "snoopy", "grinch", "bluey",
+    "yeti", "stanley", "carhartt", "harley", "jeep", "ford", "dewalt", "milwaukee", "snap-on", "john deere",
+    "budweiser", "jack daniels", "punisher", "yellowstone", "amazon", "prime",
+]
+TU_QUANG_CAO = ["best seller", "bestseller", "best selling", "sale", "discount", "free shipping",
+                "limited time", "#1", "100%", "guarantee", "top rated", "official", "licensed"]
+
+# Từ khoá dựng sẵn khi không gọi được Amazon (kiểu khách hay gõ cho áo nghề)
+TU_KHOA_SAN = ["funny", "gifts", "for men", "for women", "dad", "humor", "sarcastic", "retirement",
+               "appreciation", "proud", "christmas", "birthday"]
+MAU_GIU_HOA = {"cna", "emt", "hvac", "rn", "lpn", "usa", "us", "ems", "dad", "mom"}
+
+
+# ---------------- nghề ----------------
+def doan_nganh(duong):
+    """Tên nghề từ thư mục: 'Firefighter US 8 Design' -> 'Firefighter'; 'Design CNA' -> 'CNA'."""
+    p = os.path.abspath(duong)
+    ten = os.path.basename(p if os.path.isdir(p) else os.path.dirname(p))
+    ten = re.sub(r"(?i)\bdesign(s)?\b|\bclaude\b|\bus\s*\d+\b|\d+", " ", ten)
+    ten = re.sub(r"\s+", " ", ten).strip(" -_")
+    return chu_hoa(ten) if ten else ""
+
+
+def so_nhieu(n):
+    w = n.split()
+    if not w:
+        return n
+    c = w[-1]
+    if c.isupper():
+        c += "s"
+    elif re.search(r"(s|x|ch|sh)$", c, re.I):
+        c += "es"
+    elif re.search(r"[^aeiou]y$", c, re.I):
+        c = c[:-1] + "ies"
+    else:
+        c += "s"
+    return " ".join(w[:-1] + [c])
+
+
+def chu_hoa(s):
+    """Title Case kiểu Amazon: viết hoa đầu mỗi từ; chỉ giữ HOA cho từ viết tắt (CNA, EMT, HVAC, USA)."""
+    ra = []
+    for w in s.split():
+        lw = w.lower().strip(".,!?\"'")
+        if lw in MAU_GIU_HOA and lw not in ("dad", "mom"):
+            ra.append(w.upper())
+        elif w[:1] in "'\"":
+            ra.append(w[:1] + w[1:2].upper() + w[2:].lower())
+        else:
+            ra.append(w[:1].upper() + w[1:].lower())
+    return " ".join(ra)
+
+
+# ---------------- đọc chữ ----------------
+_ocr = None
+_tu_dien = None
+
+
+def tu_dien():
+    """(SpellChecker sửa 1 ký tự, bảng tần suất từ). Thiếu thư viện -> (None, {})."""
+    global _tu_dien
+    if _tu_dien is None:
+        try:
+            from spellchecker import SpellChecker
+            sc = SpellChecker(distance=1)
+            _tu_dien = (sc, dict(sc.word_frequency.dictionary))
+        except ImportError:
+            _tu_dien = (None, {})
+    return _tu_dien
+
+
+def _tach_dinh(w, tan):
+    """'istopwhen' -> ['i','stop','when'] nếu tách được hết thành từ có nghĩa."""
+    import math
+    n = len(w)
+    tot = [(0.0, [])] + [None] * n
+    for i in range(1, n + 1):
+        for j in range(max(0, i - 15), i):
+            m = w[j:i]
+            if tot[j] is None or m not in tan or (len(m) == 1 and m not in ("a", "i")):
+                continue
+            c = tot[j][0] - math.log(tan[m] + 1) + 8  # +8: phạt mỗi từ, ưu tiên ít mảnh
+            if tot[i] is None or c < tot[i][0]:
+                tot[i] = (c, tot[j][1] + [m])
+    return tot[n][1] if tot[n] else None
+
+
+def sua_chu(chu, nganh=""):
+    """Sửa lỗi OCR từng từ: giữ từ đúng, kéo về tên nghề, tách chữ dính, sửa 1 ký tự."""
+    import difflib
+    sc, tan = tu_dien()
+    if not tan:
+        return chu
+    nghe = [w.lower() for w in nganh.split()] + [so_nhieu(w).lower() for w in nganh.split()]
+    ra = []
+    for tok in chu.split():
+        m = re.match(r"^([^A-Za-z']*)([A-Za-z'.]+?)([^A-Za-z']*)$", tok)
+        if not m:
+            ra.append(tok)
+            continue
+        dau, w, duoi = m.groups()
+        lw = w.lower().strip(".")
+        moi = w
+        gan = [n for n in nghe if difflib.SequenceMatcher(None, lw, n).ratio() >= 0.72]
+        if lw in tan or lw in nghe or len(lw) <= 2:
+            moi = w
+        elif gan:
+            moi = gan[0]
+        else:
+            tach = _tach_dinh(lw.replace("'", ""), tan) if len(lw) >= 5 else None
+            if tach and len(tach) <= 4:
+                moi = " ".join(tach)
+            elif sc is not None:
+                c = sc.correction(lw)
+                moi = c if c else w
+        if moi.lower() != w.lower() and w.isupper():
+            moi = moi.upper()
+        ra.append(dau + moi + duoi)
+    return " ".join(ra)
+
+
+def _ti_le_tu_that(dong):
+    _, tan = tu_dien()
+    tu = [w.lower().strip(".,!?'\"") for d in dong for w in d[2].split()]
+    tu = [w for w in tu if w]
+    if not tan or not tu:
+        return sum(len(d[2]) * d[3] for d in dong)
+    return sum(len(w) for w in tu if w in tan) + 0.3 * sum(len(w) for w in tu)
+
+
+def doc_chu(duong, nganh=""):
+    """Các dòng chữ trên design, trên xuống dưới: [(chữ, độ tin, cao chữ px)]. Đọc trên nền trắng + đen, giữ bản tốt hơn."""
+    global _ocr
+    import numpy as np
+    from PIL import Image
+    if _ocr is None:
+        from rapidocr_onnxruntime import RapidOCR
+        _ocr = RapidOCR()
+    im = Image.open(duong).convert("RGBA")
+    im.thumbnail((1400, 1600))
+    tot = []
+    for nen in ((255, 255, 255), (0, 0, 0)):
+        b = Image.new("RGBA", im.size, nen + (255,))
+        b.alpha_composite(im)
+        kq, _ = _ocr(np.asarray(b.convert("RGB")))
+        dong = []
+        for hop, chu, tin in kq or []:
+            tin = float(tin)
+            chu = re.sub(r"\s+", " ", str(chu)).strip()
+            if tin < 0.7 or len(re.sub(r"[^A-Za-z]", "", chu)) < 2:
+                continue
+            y = sum(p[1] for p in hop) / 4
+            x = sum(p[0] for p in hop) / 4
+            cao = abs(hop[3][1] - hop[0][1])
+            dong.append((y, x, chu, tin, cao))
+        if _ti_le_tu_that(dong) > _ti_le_tu_that(tot):
+            tot = dong
+    # xếp theo hàng (cùng hàng nếu lệch y ít), trong hàng trái -> phải
+    tot.sort()
+    hang, ra = [], []
+    for d in tot:
+        if hang and abs(d[0] - hang[-1][0]) > 25:
+            ra += sorted(hang, key=lambda x: x[1])
+            hang = []
+        hang.append(d)
+    ra += sorted(hang, key=lambda x: x[1])
+    return [(sua_chu(d[2], nganh), round(d[3], 2), round(d[4])) for d in ra]
+
+
+def chu_tu_ten_file(duong):
+    """Gợi ý từ tên file mockup: 'Always to be nice to Electricians- Black -Electrician- T-shirt -#...'"""
+    t = os.path.splitext(os.path.basename(duong))[0]
+    t = re.split(r"#", t)[0]
+    t = re.sub(r"(?i)-?image-\d+|\(\d+\)", " ", t)
+    manh = [m.strip() for m in re.split(r"\s[-_|]\s|-(?=\s)|(?<=\s)-|_", t) if m.strip()]
+    mau = {"black", "white", "navy", "grey", "gray", "red", "blue", "green", "pink", "purple", "maroon",
+           "charcoal", "sand", "orange", "yellow", "brown", "heather"}
+    ra = []
+    for m in manh:
+        tu = [w for w in re.findall(r"[A-Za-z']+", m)]
+        if not tu or all(w.lower() in TU_SAN_PHAM | mau for w in tu):
+            continue
+        ra.append(" ".join(w for w in m.split() if w.lower().strip("-") not in TU_SAN_PHAM))
+    return [r for r in ra if len(r) > 3]
+
+
+def chu_chinh(dong, toi_da=40, nganh=""):
+    """Câu chính = dòng chữ to (headline) theo thứ tự đọc; bỏ số thứ tự, mảnh vỡ tên nghề ('Elect1')."""
+    nghe = [w.lower() for w in nganh.split()]
+    sach = []
+    for d in dong:
+        tu = [w for w in d[0].split() if not re.search(r"[A-Za-z]\d|\d[A-Za-z]|^\d+[.)]?$", w)
+              and not any(n.startswith(w.lower().strip(".")) and len(w) < len(n) for n in nghe if len(w) >= 3)]
+        if tu:
+            sach.append((" ".join(tu), d[2] if len(d) > 2 else 1))
+    if not sach:
+        return ""
+    to = max(c for _, c in sach)
+    chon = [c for c, h in sach if h >= 0.6 * to]
+    if len(" ".join(chon)) < 12:  # headline quá ngắn: thêm các dòng kế tiếp
+        chon = [c for c, _ in sach]
+    cau = ""
+    for c in chon:
+        thu = (cau + " " + c).strip()
+        if len(thu) > toi_da:
+            break
+        cau = thu
+    return chu_hoa(cau or chon[0][:toi_da])
+
+
+# ---------------- từ khoá Amazon ----------------
+def _goi_y(prefix):
+    url = ("https://completion.amazon.com/api/2017/suggestions?mid=ATVPDKIKX0DER&alias=fashion&prefix="
+           + urllib.parse.quote(prefix))
+    req = urllib.request.Request(url, headers={"User-Agent": "EtsyDesignTool/1.0"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return [s["value"] for s in json.load(r).get("suggestions", [])]
+
+
+def goi_y_amazon(nganh, lam_moi=False):
+    """Câu khách gõ trên Amazon quanh nghề này. Lưu đệm 14 ngày. Trả (danh sách câu, nguồn)."""
+    k = nganh.lower()
+    dem = {}
+    if os.path.exists(DEM):
+        try:
+            dem = json.load(open(DEM, encoding="utf-8"))
+        except (OSError, ValueError):
+            dem = {}
+    if not lam_moi and k in dem and time.time() - dem[k]["luc"] < 14 * 86400:
+        return dem[k]["cau"], "amazon (đệm)"
+    tien_to = [k, k + " shirt", "funny " + k, k + " gifts", k + " gifts for", k + " shirt for",
+               k + " t shirt", k + " hoodie", k + " shirt funny", "retired " + k, k + " dad", k + " mom",
+               k + " appreciation", k + " christmas"]
+    cau = []
+    loi = 0
+    for p in tien_to:
+        try:
+            for s in _goi_y(p):
+                if s not in cau:
+                    cau.append(s)
+        except Exception:
+            loi += 1
+            if loi >= 3:
+                break
+        time.sleep(0.25)
+    if not cau:
+        return [], "dựng sẵn (không gọi được Amazon)"
+    dem[k] = {"luc": time.time(), "cau": cau}
+    os.makedirs(TAM, exist_ok=True)
+    tmp = DEM + ".tmp"
+    json.dump(dem, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    os.replace(tmp, DEM)
+    return cau, "amazon"
+
+
+NGU_CANH = {"shirt", "shirts", "tshirt", "tshirts", "t", "tee", "tees", "gift", "gifts", "funny", "hoodie",
+            "hoodies", "sweatshirt", "retired", "retirement", "appreciation", "christmas", "birthday", "humor",
+            "sarcastic", "proud", "dad", "mom", "wife", "husband", "life"}
+CHO_AI = {"men", "women", "him", "her", "dad", "mom", "husband", "wife", "grandpa"}
+TU_RAC = {"teen", "boys", "girls", "kids", "toddler", "baby", "youth", "tester", "tool", "tools", "kit",
+          "bag", "belt", "pouch", "pants", "boots", "gloves", "socks", "book", "books", "card", "cards",
+          "ornament", "tumbler", "cup", "keychain", "near", "jobs", "job", "salary", "course", "license",
+          "small", "large", "xl", "xxl", "3x", "pack", "black", "white", "blue", "red", "gray", "grey"}
+
+
+# Chỉ nhận từ bổ nghĩa kiểu áo quà tặng; thứ tự do Amazon xếp (câu khách gõ nhiều đứng trước)
+TU_DUOC = {"funny", "gifts", "for men", "for women", "for him", "for her", "for dad", "for mom", "dad", "mom",
+           "wife", "husband", "grandpa", "retired", "retirement", "appreciation", "christmas", "birthday",
+           "humor", "humorous", "sarcastic", "proud", "life", "week", "vintage", "retro", "cute", "novelty",
+           "graduation", "future", "student", "squad", "crew", "team", "pride", "american", "patriotic",
+           "halloween", "thanksgiving", "valentines", "fathers", "mothers", "day", "joke", "pun", "saying",
+           "quote", "quotes", "sayings", "awesome", "cool", "badass", "skull", "flag", "usa"}
+
+
+def tu_khoa(nganh, cau):
+    """Xếp hạng từ bổ nghĩa (funny, gifts, for men...) theo số lần xuất hiện trong gợi ý Amazon."""
+    bo = set(nganh.lower().split()) | {w + "s" for w in nganh.lower().split()} | {so_nhieu(nganh).lower()}
+    diem = {}
+    for i, c in enumerate(cau):
+        tu = re.findall(r"[a-z']+", c.lower())
+        if not NGU_CANH & set(tu):  # gợi ý về dụng cụ, việc làm... không phải áo -> bỏ
+            continue
+        j = 0
+        while j < len(tu):
+            w = tu[j]
+            if w == "for" and j + 1 < len(tu):
+                if tu[j + 1] in CHO_AI:
+                    w = "for " + tu[j + 1]
+                j += 1
+            j += 1
+            if w in bo or w not in TU_DUOC:
+                continue
+            w = {"gift": "gifts", "men's": "for men", "mens": "for men", "women's": "for women",
+                 "womens": "for women"}.get(w, w)
+            diem[w] = diem.get(w, 0) + 1 + 1.0 / (1 + i * 0.1)
+    for i, w in enumerate(TU_KHOA_SAN):  # luôn có mặt, đứng sau từ Amazon thật
+        diem.setdefault(w, 0.5 - i * 0.01)
+    return [w for w, _ in sorted(diem.items(), key=lambda x: -x[1])]
+
+
+# ---------------- ghép ----------------
+def _co_tu(chuoi, w):
+    return re.search(r"(?<![a-z])" + re.escape(w.lower()) + r"(?![a-z])", chuoi.lower()) is not None
+
+
+def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40):
+    """Chữ design (<=40 ký tự) + nghề (nếu chưa có) + từ khoá theo hạng Amazon; 'Gifts For X' đặt cuối."""
+    chu = re.sub(r"\s+", " ", chu).strip()
+    if len(chu) > chu_max:  # câu design dài: cắt ở ranh giới từ, chừa chỗ cho từ khoá
+        chu = chu[:chu_max + 1].rsplit(" ", 1)[0]
+    t = chu
+    if nganh and not _co_tu(t, nganh) and not _co_tu(t, so_nhieu(nganh)):
+        t = (t + " " + nganh).strip()
+    cho = next((w for w in tk if w.startswith("for ")), None)
+    co_gifts = "gifts" in tk or cho is not None
+    duoi = ""
+    if co_gifts and not _co_tu(t, "gifts") and not _co_tu(t, "gift"):
+        duoi = " Gifts" + (" " + chu_hoa(cho) if cho and not _co_tu(t, cho) else "")
+        if len(t) + len(duoi) > toi_da:
+            duoi = " Gifts" if len(t) + 6 <= toi_da else ""
+    nam, nu = {"dad", "husband", "grandpa", "for men", "for him", "for dad"}, {"mom", "wife", "for women",
+                                                                              "for her", "for mom"}
+    nguoi = set()  # đã có người nhận nào (dad/mom...) -> không thêm người thứ hai / trái giới
+    if cho:
+        nguoi.add(cho)
+    for w in tk:
+        if w == "gifts" or w.startswith("for ") or _co_tu(t, w) or _co_tu(duoi, w):
+            continue
+        if w in nam | nu:
+            if any(n in nam | nu for n in nguoi if not n.startswith("for ")) or \
+                    (w in nam and nguoi & nu) or (w in nu and nguoi & nam):
+                continue
+        thu = t + " " + chu_hoa(w)
+        if len(thu) + len(duoi) <= toi_da:
+            t = thu
+            if w in nam | nu:
+                nguoi.add(w)
+    return chu_hoa(t + duoi)
+
+
+def tao_brand(nganh, tk):
+    loai = "Funny" if "funny" in tk[:6] else "Proud"
+    for b in (f"{loai} {nganh} Gifts Co", f"{nganh} Gifts Co", f"{nganh} Life", nganh):
+        if len(b) <= BRAND_MAX:
+            return b
+    return nganh[:BRAND_MAX]
+
+
+def _cat(s, n=BULLET_MAX):
+    if len(s) <= n:
+        return s
+    s = s[:n].rsplit(" ", 1)[0].rstrip(",;")
+    return s + "."
+
+
+def tao_bullets(chu, nganh, tk):
+    nhieu = so_nhieu(nganh)
+    hai_huoc = any(w in tk[:8] for w in ("funny", "humor", "sarcastic"))
+    nu = "for women" in tk and ("for men" not in tk or tk.index("for women") < tk.index("for men"))
+    nguoi = "mom, wife, coworker or best friend" if nu else "dad, husband, coworker or best friend"
+    dip = [d for d in ("christmas", "birthday", "retirement", "appreciation") if d in tk[:20]]
+    dip_txt = {"christmas": "Christmas", "birthday": "birthdays", "retirement": "retirement",
+               "appreciation": "appreciation week"}
+    dip_s = ", ".join(dip_txt[d] for d in dip[:3]) or "birthdays, Christmas and retirement"
+    trich = f'"{chu}" ' if chu else ""
+    b1 = (f"{trich}design made for proud {nhieu}. "
+          f"{'A funny' if hai_huoc else 'A great'} {nganh} gift for your {nguoi} on {dip_s}, "
+          f"or any day they deserve a little recognition for the work they do.")
+    b2 = (f"Wear it at work, on your day off or at the next crew get-together. "
+          f"{'Perfect for ' + nhieu + ' with a sense of humor' if hai_huoc else 'Perfect for ' + nhieu}"
+          f" who love what they do and want everyone to know it.")
+    return _cat(b1), _cat(b2)
+
+
+def tao_mo_ta(chu, nganh, tk):
+    """Product description (<=2000): 3 đoạn ngắn, KHÔNG nhắc loại sản phẩm (Merch cảnh báo 'product types')."""
+    nhieu = so_nhieu(nganh)
+    hai_huoc = any(w in tk[:8] for w in ("funny", "humor", "sarcastic"))
+    nu = "for women" in tk and ("for men" not in tk or tk.index("for women") < tk.index("for men"))
+    nguoi = "mom, wife, sister, coworker or best friend" if nu else "dad, husband, brother, coworker or best friend"
+    dip = [d for d in ("christmas", "birthday", "retirement", "appreciation") if d in tk[:20]]
+    dip_txt = {"christmas": "Christmas", "birthday": "a birthday", "retirement": "retirement",
+               "appreciation": "appreciation week"}
+    dip_s = ", ".join(dip_txt[d] for d in dip[:3]) or "a birthday, Christmas or retirement"
+    mo = f'"{chu}" is a bold design' if chu else "A bold design"
+    p1 = (f"{mo} made for {nhieu} who take pride in what they do. "
+          f"{'It brings the kind of humor only people in the trade really get.' if hai_huoc else 'It says it all without a single word from you.'}")
+    p2 = (f"Looking for something special for the {nganh} in your life? It makes a thoughtful pick for your "
+          f"{nguoi} - for {dip_s}, a new job, or just to say thanks for the hard work.")
+    p3 = ("Wear it on the job, on your day off or at the next crew get-together "
+          "and let everyone know what you do.")
+    return _cat(" ".join([p1, p2, p3]), MO_TA_MAX)
+
+
+# Chữ chỉ loại sản phẩm: Merch tự gắn loại hàng, nhắc trong Title/Bullet/Description bị cảnh báo
+TU_LOAI_HANG = ["t-shirt", "t-shirts", "tshirt", "tshirts", "shirt", "shirts", "tee", "tees", "hoodie", "hoodies",
+                "sweatshirt", "sweatshirts", "tank top", "tank tops", "long sleeve", "v-neck", "raglan", "pullover",
+                "zip hoodie", "popsocket", "popsockets", "phone case", "tote bag", "throw pillow", "mug"]
+
+
+def soat(kq):
+    """Danh sách cảnh báo: độ dài, từ cấm, chữ loại hàng ở mọi ô, ký tự lạ, lặp từ."""
+    loi = []
+    gioi_han = [("title", TITLE_MAX), ("brand", BRAND_MAX), ("bullet1", BULLET_MAX), ("bullet2", BULLET_MAX),
+                ("description", MO_TA_MAX)]
+    o_co = [o for o, _ in gioi_han if o in kq]
+    for o, n in gioi_han:
+        if o in kq and len(kq[o]) > n:
+            loi.append(f"{o} {len(kq[o])}/{n} ký tự")
+    tat = " ".join(kq[o] for o in o_co).lower()
+    for t in TU_CAM:
+        if _co_tu(tat, t):
+            loi.append(f"từ thương hiệu: {t}")
+    for t in TU_QUANG_CAO:
+        if t in tat:
+            loi.append(f"lời quảng cáo cấm: {t}")
+    for o in o_co:
+        co = [w for w in TU_LOAI_HANG if _co_tu(kq[o], w)]
+        if co:
+            loi.append(f"{o} nhắc loại hàng ({', '.join(co)}) — Amazon khuyên bỏ")
+    if re.search(r"[^\x20-\x7E]", kq["title"]):
+        loi.append("title có ký tự lạ/emoji")
+    lap = [w for w in set(kq["title"].lower().split()) if kq["title"].lower().split().count(w) > 1
+           and w not in TU_NOI]
+    if lap:
+        loi.append("title lặp từ: " + ", ".join(lap))
+    return loi
+
+
+def tao(chu, nganh, tk, brand=None):
+    kq = {"title": tao_title(chu, nganh, tk), "brand": brand or tao_brand(nganh, tk)}
+    kq["bullet1"], kq["bullet2"] = tao_bullets(chu, nganh, tk)
+    kq["description"] = tao_mo_ta(chu, nganh, tk)
+    kq["loi"] = soat(kq)
+    return kq
+
+
+def lam_anh(duong, nganh, tk, brand=None):
+    dong = doc_chu(duong, nganh)
+    chu = chu_chinh(dong, nganh=nganh)
+    kq = tao(chu, nganh, tk, brand)
+    kq.update(file=os.path.basename(duong), chu=chu, ocr=" | ".join(d[0] for d in dong),
+              ten_file=" | ".join(chu_tu_ten_file(duong)))
+    return kq
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Title/Brand/Bullet Amazon Merch từ ảnh design")
+    ap.add_argument("duong", help="ảnh design hoặc thư mục")
+    ap.add_argument("--nganh", help="tên nghề, vd Electrician (mặc định đoán từ tên thư mục)")
+    ap.add_argument("--brand", help="brand cố định")
+    ap.add_argument("--lam-moi", action="store_true", help="gọi lại Amazon, bỏ đệm")
+    a = ap.parse_args()
+    if hasattr(sys.stdout, "reconfigure"):
+        getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    nganh = a.nganh or doan_nganh(a.duong)
+    cau, nguon = goi_y_amazon(nganh, a.lam_moi)
+    tk = tu_khoa(nganh, cau)
+    print(f"Nghề: {nganh} | từ khoá ({nguon}): {', '.join(tk[:12])}")
+    if os.path.isfile(a.duong):
+        kq = lam_anh(a.duong, nganh, tk, a.brand)
+        for o in ("chu", "title", "brand", "bullet1", "bullet2", "description"):
+            print(f"{o.upper():8} ({len(kq[o])}): {kq[o]}")
+        print("Cảnh báo:", "; ".join(kq["loi"]) or "không")
+        return
+    fs = sorted(f for f in os.listdir(a.duong) if f.lower().endswith(DUOI_ANH))
+    ra = os.path.join(a.duong, "_MERCH.csv")
+    cot = ["file", "chu", "title", "brand", "bullet1", "bullet2", "description", "loi", "ocr", "ten_file"]
+    tmp = ra + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, fieldnames=cot)
+        w.writeheader()
+        for i, fn in enumerate(fs, 1):
+            try:
+                kq = lam_anh(os.path.join(a.duong, fn), nganh, tk, a.brand)
+            except Exception as e:
+                kq = {"file": fn, "loi": [f"lỗi đọc ảnh: {e}"], "title": "", "brand": "", "bullet1": "",
+                      "bullet2": "", "description": "", "chu": "", "ocr": "", "ten_file": ""}
+            kq["loi"] = "; ".join(kq["loi"])
+            w.writerow({k: kq.get(k, "") for k in cot})
+            print(f"[{i}/{len(fs)}] {kq['title']}")
+    os.replace(tmp, ra)
+    print("Xong:", ra)
+
+
+if __name__ == "__main__":
+    main()
