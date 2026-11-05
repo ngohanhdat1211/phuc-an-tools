@@ -19,69 +19,78 @@ from PIL import Image
 FONT = ["Anton", "Oswald:wght@400;600;700", "Bebas+Neue", "Playfair+Display:ital,wght@0,700;1,800",
         "Yellowtail", "Black+Ops+One", "Alfa+Slab+One", "Pacifico", "Permanent+Marker", "Roboto+Slab:wght@700",
         "Graduate", "Rye", "Staatliches", "Bungee", "Sancreek", "Cinzel:wght@700;900", "Kaushan+Script",
-        "Lobster", "Holtwood+One+SC", "Racing+Sans+One"]
+        "Lobster", "Holtwood+One+SC", "Racing+Sans+One", "Great+Vibes", "Dancing+Script:wght@700", "Satisfy",
+        "Sacramento", "Allura", "Montserrat:wght@800;900", "Poppins:wght@700;800", "Abril+Fatface",
+        "Bangers", "Luckiest+Guy", "Amatic+SC:wght@700", "Cookie"]
 TEN_FONT = "Anton, Oswald, Bebas Neue, Playfair Display, Yellowtail, Black Ops One, Alfa Slab One, Pacifico, " \
            "Permanent Marker, Roboto Slab, Graduate, Rye, Staatliches, Bungee, Sancreek, Cinzel, Kaushan Script, " \
-           "Lobster, Holtwood One SC, Racing Sans One"
+           "Lobster, Holtwood One SC, Racing Sans One, Great Vibes, Dancing Script, Satisfy, Sacramento, Allura, " \
+           "Montserrat, Poppins, Abril Fatface, Bangers, Luckiest Guy, Amatic SC, Cookie"
 DUOI = (".png", ".jpg", ".jpeg", ".webp")
 
-# mỗi mẫu một phong cách bán chạy khác nhau -> nhiều mẫu không giống nhau
-PHONG_CACH = [
-    "ILLUSTRATED EMBLEM: a detailed hero illustration (main subject of the niche) inside a circular or shield badge, "
-    "curved text on top and bottom arcs, banner ribbon with the slogan, small stars/laurels, vintage engraved feel",
-    "RETRO SUNSET 70s: big retro sunset (half circle with horizontal stripe cuts) behind a detailed silhouette "
-    "illustration of the niche subject, layered thick retro typography with offset shadow, 3-4 warm colors",
-    "TYPOGRAPHIC LOCKUP: bold mixed-font lockup (condensed block + script + small spaced caps), words of different "
-    "sizes interlocking like a puzzle, decorative rules, stars, dates/'EST.' line, small illustrated icon accents",
-    "AMERICANA VINTAGE: worn flag elements built into the lettering or behind it, collegiate/varsity type with "
-    "outline + drop shadow, eagle or niche illustration, heavy distressed print texture",
-    "SKETCH / LINE-ART: detailed line-art illustration of the niche subject (many strokes, hatching for shading) "
-    "with clean bold typography around it, 2-3 colors, premium minimalist boutique look",
+# mỗi mẫu đổi BỐ CỤC, còn phong cách/khí chất giữ theo mẫu gốc
+BO_CUC = [
+    "illustration on one side, stacked text block on the other side (asymmetric, magazine-cover feel)",
+    "hero illustration centered, big hero word above or across it, supporting lines below",
+    "text-led: huge expressive hero word/lettering filling the width, illustration smaller and tucked into the text",
+    "illustration at the bottom/foreground rising into the text, text arranged in a tight block on top",
 ]
 
 DE_BAI = """You are an award-level t-shirt graphic designer whose designs sell in the Etsy / Amazon Merch top 1%.
 Look at the reference design image: {anh}
-It belongs to ANOTHER shop. Do NOT copy its wording, slogan, layout or artwork. Keep only the niche and the buyer.
-Goal: a NEW design that is clearly MORE premium and more emotional than the reference, so a buyer scrolling past
-50 similar shirts stops and buys this one{khac}.
+It belongs to ANOTHER shop. Do NOT copy its wording, slogan or exact artwork. Goal: a NEW design for the SAME buyer
+that is clearly better than the reference, so a buyer scrolling past 50 similar shirts stops and buys this one{khac}.
 
-Step 1 - think (silently) about the buyer: who wears it, what identity/pride/joke they want to show the world,
-what gift-giver buys it. Write a slogan (2-9 words) they would say about themselves: specific, emotional or witty,
-plain English. Not a famous quote, not a trademark, no brand/team/character names, no "shirt/tee" words.
-No official military branch names, seals, insignia, unit logos (they are trademarks) - generic soldiers, eagles,
-flags, dog tags, boots, helmets are fine.
+Step 1 - study the reference (silently) and KEEP its vibe. Note: target buyer (gender, age, personality), mood
+(e.g. sassy/sexy/glam, funny, cute, badass, patriotic, vintage, faith...), art technique (e.g. watercolor splashes,
+fashion illustration, retro, grunge, cartoon), color family, font personality (script, brush, block...).
+The new design MUST feel like it belongs to the same style category and would sell to the same person:
+a young sexy glam design stays young/sexy/glam (NOT vintage badges); a vintage design stays vintage; a woman-focused
+design stays woman-focused (slogan written for her, feminine illustration). Upgrade quality, don't change genre.
 
-Step 2 - style for THIS design: {phong_cach}
+Step 2 - slogan (2-9 words, plus an optional short supporting list like the reference has): same attitude as the
+reference but new words, the buyer would say it about herself/himself. Plain English. Not a famous quote, not a
+trademark, no brand/team/character/celebrity names, no "shirt/tee" words. No official military branch names, seals
+or insignia.
 
-Step 3 - draw it as a rich, professional SVG (this is what separates a seller from clip art):
-- A real ILLUSTRATION as the centerpiece, not a few basic shapes: build it from many <path> elements with curves
-  (C/Q commands), at least 2 tones per object (base + shadow/highlight shapes), outlines, small details.
-  Examples of techniques: halftone dots via <pattern>, engraved hatching lines, sunburst rays, texture lines,
-  inner strokes, offset shadow copies of text, outlined text (paint-order="stroke"), arc text on <textPath>.
-- Typography is the hero: 2-3 fonts mixed with clear hierarchy, one hero word very large, supporting lines tight
-  and aligned to the illustration edges. Every text line uses textLength + lengthAdjust="spacingAndGlyphs".
-- Composition: compact, balanced block (like a printed chest graphic), no random floating bits, no big empty gaps.
+Step 3 - layout for THIS variant: {bo_cuc}
+
+Step 4 - draw it as a rich, professional SVG:
+- A real ILLUSTRATION matching the reference's subject type: if it shows a person, draw a stylized flat-vector
+  person in the same spirit (e.g. fashion-illustration woman: flowing hair drawn as many curved strands in 2-3
+  tones, big sunglasses with gradient lenses and highlight, glossy lips, earrings, bare shoulders/outfit, soft skin
+  shading) - stylized and elegant, not realistic, never a stick figure or blocky robot. Many <path> elements with
+  C/Q curves, at least 2 tones per object (base + shadow + highlight), <linearGradient>/<radialGradient> allowed.
+- Background effects that match the vibe, e.g. watercolor/paint splashes = several overlapping irregular blobs with
+  low-opacity gradients + drips + small splatter dots (make blob edges organic with
+  <filter><feTurbulence baseFrequency="0.01" numOctaves="3"/><feDisplacementMap scale="120"/></filter>).
+- Typography: 2-3 fonts with the same personality as the reference (script/brush for glam, block for bold),
+  one hero word very large, outlines/shadows/colored glow layers for depth. Every text line uses
+  textLength + lengthAdjust="spacingAndGlyphs".
+- Composition: compact, balanced chest graphic, no random floating bits, no big empty gaps.
 - Canvas: <svg xmlns="http://www.w3.org/2000/svg" width="4200" height="4800" viewBox="0 0 4200 4800">,
-  transparent background, printed on a {nen} shirt -> 3-5 colors that pop on it. On a dark shirt NEVER use navy,
-  black, dark gray or any dark color for text or large shapes (they disappear; dark only as thin inner details over
-  light shapes); on a light shirt avoid white/cream/pale colors.
+  transparent background, printed on a {nen} shirt -> colors that pop on it (as colorful as the reference). On a dark
+  shirt NEVER use navy, black, dark gray or dark colors for text or large shapes (dark only as small inner details over
+  light shapes); on a light shirt avoid white/cream/pale colors for text.
 - Fonts: only these Google Fonts by font-family: {font}. Everything inside x 150..4050, y 150..4650, art ~90% wide.
 - No raster images, no <image>, no external links.
-- Optional vintage distress: wrap content in <g filter="url(#g)"> with
-  <filter id="g" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.02"
-  numOctaves="4" seed="7" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 12 -7.6"
-  result="m"/><feComposite in="SourceGraphic" in2="m" operator="out"/></filter>
-  Never put the distress filter on text smaller than font-size 350 (it eats letters) - keep small text outside it.
+- Distress/grunge texture ONLY if the reference is vintage/grunge. If used: <filter id="g" x="0" y="0" width="100%"
+  height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="4" seed="7" result="n"/>
+  <feColorMatrix in="n" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 12 -7.6" result="m"/>
+  <feComposite in="SourceGraphic" in2="m" operator="out"/></filter>, never on text smaller than font-size 350.
 - Write the SVG with the Write tool to: {svg}
 Then answer with exactly one line: SLOGAN: <the new slogan>"""
 
 SOAT = """You are the art director. Look at the rendered preview: {xem} (SVG source: {svg}). Background = shirt color ({nen}).
 Reference design from a competitor: {anh}
-Judge it like a buyer on Etsy: would this sell better than the competitor? Score 1-10 for: illustration detail,
+Judge it like the reference's buyer on Etsy. Score 1-10 for: SAME VIBE as the reference (mood, target buyer,
+art technique, font personality - a vintage badge for a glam/sexy reference scores 1), illustration quality,
 typography craft, composition, color contrast on the shirt.
-1) Always fix errors: clipped/overflowing text, overlaps, illegible text, weak contrast, broken art, big empty gaps.
-2) If any score is below 8: UPGRADE the design in the SVG (more detailed illustration with shading layers, better
-   type lockup, tighter composition) - keep the same slogan and style. Rewrite the file with the Write tool.
+1) Always fix errors: clipped/overflowing text, overlaps, illegible text, weak contrast, broken or awkward art,
+   big empty gaps.
+2) If any score is below 8: UPGRADE the SVG (restyle toward the reference's vibe, more detailed/elegant illustration
+   with shading and highlights, better type lockup, tighter composition) - keep the same slogan.
+   Rewrite the file with the Write tool.
 If everything is 8+ and error-free, do not touch the file.
 Answer with exactly one line: OK or FIXED"""
 
@@ -179,16 +188,16 @@ def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print):
     os.makedirs(ra, exist_ok=True)
     nen = nen_ao(anh)
     kq, da = [], []
-    lech = sum(map(ord, os.path.basename(anh))) % len(PHONG_CACH)  # design khác nhau bắt đầu phong cách khác
+    lech = sum(map(ord, os.path.basename(anh))) % len(BO_CUC)  # design khác nhau bắt đầu bố cục khác
     for i in range(so):
         tam = tempfile.mkdtemp(prefix="rd_", dir=ra)
         svg = os.path.join(tam, "design.svg")
         khac = (f'. Already made: {"; ".join(da)} - the new slogan must not reuse their key words or opening words, '
-                f'and the main illustration subject must be different') if da else ""
+                f'and the illustration must use a different pose/scene (same vibe and buyer)') if da else ""
         t0 = time.time()
         bao(f"[{i + 1}/{so}] Claude đang nghĩ mẫu mới cho {os.path.basename(anh)}…")
         tra, phi = goi_claude(claude, DE_BAI.format(anh=os.path.abspath(anh), khac=khac, nen=nen, font=TEN_FONT,
-                                                    svg=svg, phong_cach=PHONG_CACH[(i + lech) % len(PHONG_CACH)]), tam, os.path.dirname(os.path.abspath(anh)))
+                                                    svg=svg, bo_cuc=BO_CUC[(i + lech) % len(BO_CUC)]), tam, os.path.dirname(os.path.abspath(anh)))
         m = re.search(r"SLOGAN:\s*(.+)", tra)
         cau = m.group(1).strip().strip('"') if m else f"redesign {i + 1}"
         if not os.path.exists(svg):

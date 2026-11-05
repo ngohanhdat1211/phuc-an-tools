@@ -311,6 +311,134 @@ def _dau(c, ds):
     return [d for d in ds if (d in c if (" " in d or not d.isalpha()) else re.search(r"(?<![a-z])" + d, c))]
 
 
+# ---------------- Claude Opus nhìn ảnh (gói Max qua Claude Code, không tốn API) ----------------
+TEP_CLAUDE = "_merch_claude.json"  # đệm kết quả trong thư mục design: không đọc lại ảnh đã đọc
+DE_CLAUDE = """You are a senior Amazon Merch on Demand lister. Read every image file listed below (t-shirt designs,{nganh}).
+For EACH image decide:
+- giong: the design's tone for the listing title. "hai" = funny, sarcastic, joke, pun, gag. "hao" = proud, patriotic,
+  sentimental, honor, tribute, inspirational. "trung" = neutral/plain (just a name, a profession, a simple statement).
+  Judge the message a buyer gets from the whole design (words + art), not single words. American flag + "by birth,
+  by choice" = hao. A sarcastic line over a flag is still hai.
+- chu: the main printed text exactly as a buyer reads it, in natural order, Title Case, no line breaks. Skip tiny
+  watermarks / shop logos. If the text is unreadable, use the file name wording.
+- chu_ngan: the shortest phrase (max 40 characters) a shopper would search that names this design, taken from its
+  words, e.g. "Concrete Finisher's Wife", "Welding Is My Therapy", "American By Birth Welder By Choice".
+- gioi: who the design is worn by / bought for. "nu" = woman (wife, mom, girlfriend, she/her...), "nam" = man
+  (dad, husband, grandpa, he/him as the wearer...), "ca" = anyone. Note: a wife's design that talks about "he" is "nu".
+- dau: 2-4 short English visual cues that justify giong.
+- ly_do: one short sentence in Vietnamese explaining the tone.
+- rui_ro: anything that can get the listing removed on Amazon: brand names or logos, sports teams, characters,
+  celebrities, politicians, military branch official seals/insignia, famous trademarked slogans. Empty list if none.
+Answer ONLY a JSON array, one object per image, same order:
+[{{"file":"<file name>","giong":"hai|hao|trung","chu":"...","chu_ngan":"...","gioi":"nam|nu|ca","dau":["..."],
+  "ly_do":"...","rui_ro":["..."]}}]
+Images:
+{anh}"""
+
+
+def tim_claude():
+    """claude.exe của Claude Code (PATH hoặc extension VS Code). Không có -> None."""
+    import glob
+    import shutil
+    p = shutil.which("claude")
+    if p:
+        return p
+    ds = glob.glob(os.path.expanduser(r"~\.vscode\extensions\anthropic.claude-code-*\resources\native-binary\claude.exe"))
+    return sorted(ds, key=os.path.getmtime)[-1] if ds else None
+
+
+def _dem_claude(thu_muc):
+    try:
+        return json.load(open(os.path.join(thu_muc, TEP_CLAUDE), encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def nap_claude(anh):
+    """Kết quả Claude đã đọc cho 1 ảnh (còn khớp ngày sửa file) hoặc None."""
+    r = _dem_claude(os.path.dirname(anh)).get(os.path.basename(anh))
+    if r and abs(r.get("mtime", 0) - os.path.getmtime(anh)) < 2:
+        return r
+    return None
+
+
+def _ghi_dem_claude(thu_muc, moi):
+    d = _dem_claude(thu_muc)
+    d.update(moi)
+    tep = os.path.join(thu_muc, TEP_CLAUDE)
+    with open(tep + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=1)
+    os.replace(tep + ".tmp", tep)
+
+
+def _goi_claude_anh(claude, anh, nganh, mo_hinh="opus"):
+    import subprocess
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)  # ép dùng tài khoản Max, không tính tiền API
+    cau = DE_CLAUDE.format(nganh=f" profession: {nganh}" if nganh else "", anh="\n".join(anh))
+    lenh = [claude, "-p", cau, "--output-format", "json", "--model", mo_hinh, "--tools", "Read",
+            "--allowedTools", "Read", "--strict-mcp-config", "--setting-sources", "",
+            "--system-prompt", "You classify t-shirt designs for Amazon Merch. Read only the named image files."]
+    for t in dict.fromkeys(os.path.dirname(a) for a in anh):
+        lenh += ["--add-dir", t]
+    r = subprocess.run(lenh, cwd=os.path.dirname(anh[0]), env=env, capture_output=True, text=True,
+                       encoding="utf-8", timeout=900, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        d = json.loads(r.stdout)
+    except ValueError:
+        raise RuntimeError((r.stderr or r.stdout or "Claude không trả lời")[-300:])
+    if d.get("is_error"):
+        raise RuntimeError(str(d.get("result"))[:300])
+    tra = d.get("result", "")
+    m = re.search(r"\[.*\]", tra, re.S)
+    if not m:
+        raise RuntimeError("Claude trả lời không đúng dạng: " + tra[:200])
+    return json.loads(m.group(0)), list((d.get("modelUsage") or {}).keys())
+
+
+def chu_claude(x):
+    """Chữ chính cho title từ kết quả Claude: câu đủ nếu vừa title (<=54), dài hơn thì câu ngắn."""
+    c, n = x.get("chu", ""), x.get("chu_ngan", "")
+    return c if c and len(c) <= TITLE_MAX - 6 else (n or c)
+
+
+def doc_claude(ds_anh, nganh="", lo=4, bao=print, mo_hinh="opus", lam_lai=False):
+    """Claude (mặc định Opus) nhìn từng ảnh: kiểu design, chữ chính, rủi ro thương hiệu. Lưu đệm cạnh ảnh.
+    Trả {đường ảnh: kết quả}. Ảnh đã đọc (đệm còn khớp) thì bỏ qua trừ khi lam_lai."""
+    claude = tim_claude()
+    if not claude:
+        raise RuntimeError("Máy này chưa có Claude Code (đăng nhập gói Max) — cài rồi thử lại.")
+    ra = {}
+    can = []
+    for a in ds_anh:
+        r = None if lam_lai else nap_claude(a)
+        if r:
+            ra[a] = r
+        else:
+            can.append(a)
+    for i in range(0, len(can), lo):
+        nhom = can[i:i + lo]
+        bao(f"Claude đang xem {i + 1}-{i + len(nhom)} / {len(can)}...")
+        kq, mh = _goi_claude_anh(claude, nhom, nganh, mo_hinh)
+        theo_ten = {os.path.basename(str(x.get("file", ""))).lower(): x for x in kq if isinstance(x, dict)}
+        moi = {}
+        for j, a in enumerate(nhom):
+            x = theo_ten.get(os.path.basename(a).lower()) or (kq[j] if j < len(kq) and isinstance(kq[j], dict) else None)
+            if not x or x.get("giong") not in GIONG_TEN:
+                continue
+            x = {"giong": x["giong"], "chu": re.sub(r"\s+", " ", str(x.get("chu", ""))).strip(),
+                 "chu_ngan": re.sub(r"\s+", " ", str(x.get("chu_ngan", ""))).strip()[:60],
+                 "gioi": x.get("gioi") if x.get("gioi") in ("nam", "nu", "ca") else "ca",
+                 "dau": [str(t) for t in (x.get("dau") or [])][:4], "ly_do": str(x.get("ly_do", "")),
+                 "rui_ro": [str(t) for t in (x.get("rui_ro") or []) if str(t).strip()],
+                 "mo_hinh": ",".join(mh), "mtime": os.path.getmtime(a)}
+            moi.setdefault(os.path.dirname(a), {})[os.path.basename(a)] = x
+            ra[a] = x
+        for t, m in moi.items():
+            _ghi_dem_claude(t, m)
+    return ra
+
+
 def doan_giong(chu, ocr=""):
     """Trả (kiểu, danh sách dấu hiệu). Đếm dấu hiệu chữ hài vs chữ tự hào trong câu design + chữ OCR."""
     c = " " + (chu + " " + (ocr or "")).lower() + " "
@@ -572,7 +700,7 @@ def tk_cho_title(tk, chu, cho_mua=False):
     return ra
 
 
-def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False):
+def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False, gioi=None):
     """Chữ design (<=40 ký tự) + nghề (nếu chưa có) + từ khoá quanh năm theo hạng Amazon; 'Gifts For X' đặt cuối."""
     tk = tk_cho_title(tk, chu, cho_mua)
     chu = re.sub(r"\s+", " ", chu).strip()
@@ -593,7 +721,7 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False):
             phan = [chu] + truoc + [nganh] + sau
         return " ".join(p for p in phan if p) + duoi
 
-    gioi = _boi_canh(nganh, tk, chu)[1]
+    gioi = _boi_canh(nganh, tk, chu, gioi)[1]
     trai = NU if gioi == "nam" else (NAM if gioi == "nu" else set())  # design nói về vợ -> không "For Men"
     cho = next((w for w in tk if w.startswith("for ") and w not in trai), None)
     co_gifts = "gifts" in tk or cho is not None
@@ -642,9 +770,11 @@ def _cat(s, n=BULLET_MAX):
     return s + "."
 
 
-def _boi_canh(nganh, tk, chu=""):
+def _boi_canh(nganh, tk, chu="", gioi=None):
     """gioi: 'nam' / 'nu' theo chữ design (dad, wife...) hoặc khi anh chỉ để tick 1 giới; còn lại 'ca' (nhắc cả hai)."""
     hai_huoc = any(w in tk[:8] for w in ("funny", "humor", "sarcastic"))
+    if gioi in ("nam", "nu", "ca"):  # đã biết (Claude nhìn ảnh / chữ OCR + tên file)
+        return hai_huoc, gioi
     c = (chu or "").lower()
     co_nam = any(_co_tu(c, w) for w in ("dad", "husband", "grandpa", "papa", "father", "son", "man", "men", "him"))
     co_nu = any(_co_tu(c, w) for w in ("mom", "wife", "grandma", "nana", "mother", "daughter", "woman", "women",
@@ -656,10 +786,10 @@ def _boi_canh(nganh, tk, chu=""):
     return hai_huoc, "ca"
 
 
-def tao_bullets(chu, nganh, tk, cum=None):
+def tao_bullets(chu, nganh, tk, cum=None, gioi=None):
     """2 bullet. cum = cum_tu_khoa(...) -> rải cụm khách gõ thật (mỗi cụm dùng 1 lần), câu đổi theo design."""
     nhieu = so_nhieu(nganh)
-    hai_huoc, gioi = _boi_canh(nganh, tk, chu)
+    hai_huoc, gioi = _boi_canh(nganh, tk, chu, gioi)
     nu = gioi == "nu"
     nguoi = {"nu": "mom, wife, coworker or best friend", "nam": "dad, husband, coworker or best friend",
              "ca": "dad, mom, husband, wife or coworker"}[gioi]
@@ -701,11 +831,11 @@ def tao_bullets(chu, nganh, tk, cum=None):
     return _cat(b1), _cat(b2)
 
 
-def tao_mo_ta(chu, nganh, tk, cum=None):
+def tao_mo_ta(chu, nganh, tk, cum=None, gioi=None):
     """Product description (<=2000): 3 đoạn ngắn, KHÔNG nhắc loại sản phẩm (Merch cảnh báo 'product types').
     Dùng các cụm từ khoá chưa có trong bullet (qua[1:], nguoi[2:], dip[1:])."""
     nhieu = so_nhieu(nganh)
-    hai_huoc, gioi = _boi_canh(nganh, tk, chu)
+    hai_huoc, gioi = _boi_canh(nganh, tk, chu, gioi)
     nu = gioi == "nu"
     nguoi = {"nu": "mom, wife, sister, coworker or best friend", "nam": "dad, husband, brother, coworker or best friend",
              "ca": "dad, mom, husband, wife, coworker or best friend"}[gioi]
@@ -772,21 +902,25 @@ def soat(kq):
     return loi
 
 
-def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False, giong=None, ocr=""):
+def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False, giong=None, ocr="", gioi=None):
     """cau = câu gợi ý Amazon thô (goi_y_amazon) -> bullet/mô tả dùng cụm khách gõ thật; None = văn mẫu.
     giong = 'hai' / 'hao' / 'trung' (None = tự đoán từ chữ design)."""
     dau = []
     if giong is None:
         giong, dau = doan_giong(chu, ocr)
     tk = tk_theo_giong(tk, giong, chu + " " + (ocr or ""))
-    kq = {"title": tao_title(chu, nganh, tk, cho_mua=cho_mua), "brand": brand or tao_brand(nganh, tk)}
+    if gioi not in ("nam", "nu", "ca"):  # giới khách: chữ chính trước, không rõ thì xem cả chữ OCR + tên file
+        gioi = _boi_canh(nganh, tk, chu)[1]
+        if gioi == "ca" and ocr:
+            gioi = _boi_canh(nganh, tk, ocr)[1]
+    kq = {"title": tao_title(chu, nganh, tk, cho_mua=cho_mua, gioi=gioi), "brand": brand or tao_brand(nganh, tk)}
     cum = None
     if cau:
-        gioi = _boi_canh(nganh, tk, chu)[1]
         cum = cum_tu_khoa(nganh, cau, tk, None if gioi == "ca" else gioi == "nu")
         cum = [(c, l) for c, l in cum if c.lower() not in kq["title"].lower()]
-    kq["bullet1"], kq["bullet2"] = tao_bullets(chu, nganh, tk, cum)
-    kq["description"] = tao_mo_ta(chu, nganh, tk, cum)
+    kq["bullet1"], kq["bullet2"] = tao_bullets(chu, nganh, tk, cum, gioi)
+    kq["description"] = tao_mo_ta(chu, nganh, tk, cum, gioi)
+    kq["gioi"] = gioi
     kq["uspto"] = link_uspto(chu)
     kq["giong"], kq["dau_giong"] = giong, dau
     kq["loi"] = soat(kq)
@@ -803,7 +937,8 @@ def lam_anh(duong, nganh, tk, brand=None, cau=None):
 
 
 # Cột CSV: ban_quyen để trống = chưa soát; Claude (skill soat-ban-quyen) ghi 🔴/🟡/🟢 + lý do vào đây
-COT_CSV = ["file", "chu", "giong", "title", "brand", "bullet1", "bullet2", "description", "loi", "ban_quyen", "uspto", "ocr"]
+COT_CSV = ["file", "chu", "giong", "title", "brand", "bullet1", "bullet2", "description", "loi", "rui_ro", "ban_quyen",
+           "uspto", "ocr"]
 
 
 def main():

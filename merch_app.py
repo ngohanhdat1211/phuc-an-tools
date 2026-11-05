@@ -49,6 +49,8 @@ class App(tk.Tk):
         self.ocr = {}  # duong -> (dong OCR, goi y ten file)
         self.sua = {}  # duong -> chu chinh anh da sua
         self.tk_list, self.chon, self.cau = [], {}, []
+        self.claude = {}  # duong -> kết quả Claude Opus nhìn ảnh (kiểu, chữ, giới, rủi ro)
+        self.tu_dong = {}  # duong -> chữ chính tool tự điền (để biết anh có sửa tay không)
         self.tu_tat = set()  # từ khoá tool tự bỏ tick vì không hợp kiểu design (funny ở design tự hào...)
         self.nganh_da_lay = None
         self.anh_tk = None
@@ -90,6 +92,12 @@ class App(tk.Tk):
         self.l_dem = tk.Label(nav, text="0 / 0", bg=gd.KEM, fg=gd.NAVY, font=(gd.FONT_TD, 11), width=10)
         self.l_dem.pack(side="left")
         gd.Nut(nav, "Sau ›", lambda: self._mo(self.i + 1), "phu", cao=32, co=10).pack(side="left")
+        self.nut_claude = gd.Nut(b, "✦ Claude Opus đọc design", self._doc_claude, "chinh", rong=330, cao=38, co=10)
+        self.nut_claude.pack(pady=(4, 2))
+        self.l_claude = tk.Label(b, text="Đọc đúng kiểu design + chữ chính + rủi ro thương hiệu cả thư mục\n"
+                                         "(gói Max, ~6 giây/ảnh, đọc rồi lưu lại không đọc lại)",
+                                 bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8), justify="center", wraplength=340)
+        self.l_claude.pack()
         self.bind("<Prior>", lambda e: self._mo(self.i - 1))
         self.bind("<Next>", lambda e: self._mo(self.i + 1))
         day = tk.Frame(b, bg=gd.KEM)
@@ -132,6 +140,9 @@ class App(tk.Tk):
         cb.bind("<<ComboboxSelected>>", lambda e: self._doi_giong())
         self.l_giong = tk.Label(h4, text="", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8))
         self.l_giong.pack(side="left")
+        self.l_rui_ro = tk.Label(p, text="", bg=gd.KEM, fg=gd.DO, font=(gd.FONT, 9, "bold"), justify="left",
+                                 wraplength=720)
+        self.l_rui_ro.pack(anchor="w")
 
         tk.Label(p, text="Từ khoá — Amazon xếp hạng (khách gõ nhiều đứng trước), bỏ tick để không dùng",
                  bg=gd.KEM, fg=gd.NAVY, font=(gd.FONT, 9, "bold")).pack(anchor="w", pady=(10, 0))
@@ -199,6 +210,10 @@ class App(tk.Tk):
         self.l_dem.config(text=f"{self.i + 1} / {len(self.ds)}")
         self.l_ten.config(text=os.path.basename(d))
         self._ve_anh(d)
+        if d not in self.claude:
+            r = mt.nap_claude(d)
+            if r:
+                self.claude[d] = r
         nganh = mt.doan_nganh(d)
         if nganh and (not self.v_nganh.get() or self.nganh_da_lay != nganh):
             self.v_nganh.set(nganh)
@@ -237,7 +252,9 @@ class App(tk.Tk):
         nganh = self.v_nganh.get().strip()
         g = self.sua_giong.get(d)
         self.v_giong.set(mt.GIONG_TEN[g] if g else "Tự đoán")
-        self.v_chu.set(self.sua.get(d) or mt.chon_chu(dong, ten, nganh))
+        tu_dong = mt.chu_claude(self.claude[d]) if d in self.claude else mt.chon_chu(dong, ten, nganh)
+        self.tu_dong[d] = tu_dong
+        self.v_chu.set(self.sua.get(d) or tu_dong)
         for w in self.k_goi_y.winfo_children():
             w.destroy()
         tk.Label(self.k_goi_y, text="Bấm để thêm:", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(side="left")
@@ -264,7 +281,10 @@ class App(tk.Tk):
 
     def _ocr_hien(self):
         d = self.ds[self.i] if self.ds else None
-        return " ".join(x[0] for x in self.ocr.get(d, ([], []))[0]) if d else ""
+        if not d:
+            return ""
+        dong, ten = self.ocr.get(d, ([], []))
+        return " ".join([x[0] for x in dong] + list(ten))
 
     def _noi_chu(self, g):
         cu = self.v_chu.get().strip()
@@ -273,8 +293,9 @@ class App(tk.Tk):
     def _luu_sua(self):
         if self.ds and 0 <= self.i < len(self.ds):
             c = self.v_chu.get().strip()
-            if c and not c.startswith("("):
-                self.sua[self.ds[self.i]] = c
+            d = self.ds[self.i]
+            if c and not c.startswith("(") and c != self.tu_dong.get(d):  # chỉ nhớ khi anh sửa tay
+                self.sua[d] = c
 
     # ---------------- từ khoá ----------------
     def _lay_tu_khoa(self, lam_moi=False):
@@ -323,11 +344,17 @@ class App(tk.Tk):
         if chu.startswith("("):
             return
         d = self.ds[self.i] if self.ds else None
+        cl = self.claude.get(d)
         kq = mt.tao(chu, self.v_nganh.get().strip(), self._tk_chon(), self.v_brand.get().strip() or None,
-                    self.cau, self.v_mua.get(), self.sua_giong.get(d), self._ocr_hien())
+                    self.cau, self.v_mua.get(), self.sua_giong.get(d) or (cl or {}).get("giong"), self._ocr_hien(),
+                    (cl or {}).get("gioi"))
         self._tick_theo_giong(kq["giong"], chu)
+        rr = (cl or {}).get("rui_ro") or []
+        self.l_rui_ro.config(text=("⚠ Claude thấy rủi ro: " + " · ".join(rr)) if rr else "")
         if d in self.sua_giong:
             self.l_giong.config(text="(anh chọn tay)")
+        elif cl:
+            self.l_giong.config(text=f"Claude Opus: {mt.GIONG_TEN[cl['giong']]} — {cl.get('ly_do', '')}"[:150])
         else:
             self.l_giong.config(text=f"Đoán: {mt.GIONG_TEN[kq['giong']]}"
                                      + (f" — dấu hiệu: {', '.join(kq['dau_giong'][:5])}" if kq["dau_giong"]
@@ -337,6 +364,34 @@ class App(tk.Tk):
             t.delete("1.0", "end")
             t.insert("1.0", kq[k])
         self._dem()
+
+    def _doc_claude(self):
+        if not self.ds:
+            messagebox.showinfo("Merch Title", "Chọn ảnh hoặc thư mục design trước.")
+            return
+        ds, nganh = list(self.ds), self.v_nganh.get().strip()
+        self.nut_claude.bat(False)
+
+        def bao(t):
+            self.after(0, lambda: self.l_claude.config(text=t, fg=gd.NAVY))
+
+        def chay():
+            try:
+                kq = mt.doc_claude(ds, nganh, bao=bao)
+                self.claude.update(kq)
+                tin, mau = f"Claude Opus đã đọc {len(kq)} / {len(ds)} design. Kiểu + chữ chính đã cập nhật.", "#2E7D4F"
+            except Exception as e:
+                tin, mau = f"Lỗi Claude: {e}", gd.DO
+
+            def xong():
+                self.l_claude.config(text=tin, fg=mau)
+                self.nut_claude.bat(True)
+                d = self.ds[self.i] if self.ds else None
+                if d in self.ocr:
+                    self._sau_ocr(d)
+                    self._tao()
+            self.after(0, xong)
+        threading.Thread(target=chay, daemon=True).start()
 
     def _tick_theo_giong(self, giong, chu):
         """Ô tick phản ánh đúng từ được dùng: design tự hào -> bỏ tick funny/humor..., design hài -> bỏ tick proud.
@@ -399,15 +454,18 @@ class App(tk.Tk):
                     if d not in self.ocr:
                         self.ocr[d] = (mt.doc_chu(d, nganh), mt.chu_tu_ten_file(d))
                     dong, ten = self.ocr[d]
-                    chu = self.sua.get(d) or mt.chon_chu(dong, ten, nganh)
-                    kq = mt.tao(chu, nganh, tk_, brand, cau, mua, giong_tay.get(d), " ".join(x[0] for x in dong))
+                    cl = self.claude.get(d) or mt.nap_claude(d) or {}
+                    chu = self.sua.get(d) or (mt.chu_claude(cl) if cl else mt.chon_chu(dong, ten, nganh))
+                    kq = mt.tao(chu, nganh, tk_, brand, cau, mua, giong_tay.get(d) or cl.get("giong"),
+                                " ".join([x[0] for x in dong] + list(ten)), cl.get("gioi"))
+                    kq["rui_ro"] = " · ".join(cl.get("rui_ro") or [])
                     kq["giong"] = mt.GIONG_TEN[kq["giong"]]
                     kq.update(file=os.path.basename(d), chu=chu, ocr=" | ".join(d[0] for d in dong))
                 except Exception as e:
                     kq = {"file": os.path.basename(d), "loi": [f"lỗi: {e}"]}
                 kq["loi"] = "; ".join(kq.get("loi", []))
-                if d not in self.sua:
-                    kq["loi"] = ("chữ OCR chưa soát; " + kq["loi"]).strip("; ")
+                if d not in self.sua and not (self.claude.get(d) or mt.nap_claude(d)):
+                    kq["loi"] = ("chữ OCR chưa soát (bấm Claude Opus đọc design); " + kq["loi"]).strip("; ")
                 hang.append({c: kq.get(c, "") for c in cot})
             tmp = ra + ".tmp"
             try:
