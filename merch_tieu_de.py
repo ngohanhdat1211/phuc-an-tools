@@ -465,39 +465,83 @@ def _co_tu(chuoi, w):
     return re.search(r"(?<![a-z])" + re.escape(w.lower()) + r"(?![a-z])", chuoi.lower()) is not None
 
 
-def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40):
-    """Chữ design (<=40 ký tự) + nghề (nếu chưa có) + từ khoá theo hạng Amazon; 'Gifts For X' đặt cuối."""
+# Từ mùa vụ / dịp: title Merch giữ quanh năm -> chỉ vào title khi chính design nói về mùa/dịp đó
+# (từ -> gốc chữ tìm trong design). Không vào title thì vẫn nằm ở bullet/description cho Amazon đọc.
+TU_MUA = {"christmas": ("christmas", "xmas", "santa", "merry"), "halloween": ("halloween", "spooky", "boo"),
+          "thanksgiving": ("thanksgiving", "turkey"), "valentines": ("valentine",), "easter": ("easter",),
+          "fathers": ("father",), "mothers": ("mother",), "day": ("day",), "graduation": ("grad",)}
+TU_DIP = {"retirement": ("retire",), "retired": ("retire",), "birthday": ("birthday", "bday"),
+          "appreciation": ("appreciat", "thank"), "week": ("week",)}
+# Nhóm giọng điệu: title chỉ giữ 1 từ (xếp hạng cao nhất) -> không ra "Funny Proud Welder"
+NHOM_HAI = {"funny", "humor", "humorous", "sarcastic", "joke", "pun", "novelty", "proud", "cute", "awesome",
+            "cool", "badass"}
+
+
+def la_mua_dip(w):
+    return w in TU_MUA or w in TU_DIP
+
+
+def tk_cho_title(tk, chu, cho_mua=False):
+    """Bỏ từ mùa/dịp (trừ khi design nói về nó hoặc cho_mua=True) + chỉ giữ 1 từ hài hước xếp hạng cao nhất."""
+    c = (chu or "").lower()
+    ra, co_hai = [], False
+    for w in tk:
+        goc = TU_MUA.get(w) or TU_DIP.get(w)
+        if goc and not cho_mua and not any(g in c for g in goc):
+            continue
+        if w in NHOM_HAI:
+            if co_hai:
+                continue
+            co_hai = True
+        ra.append(w)
+    return ra
+
+
+def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False):
+    """Chữ design (<=40 ký tự) + nghề (nếu chưa có) + từ khoá quanh năm theo hạng Amazon; 'Gifts For X' đặt cuối."""
+    tk = tk_cho_title(tk, chu, cho_mua)
     chu = re.sub(r"\s+", " ", chu).strip()
     if len(chu) > chu_max:  # câu design dài: cắt ở ranh giới từ, chừa chỗ cho từ khoá
         chu = chu[:chu_max + 1].rsplit(" ", 1)[0]
-    t = chu
-    if nganh and not _co_tu(t, nganh) and not _co_tu(t, so_nhieu(nganh)):
-        t = (t + " " + nganh).strip()
+    co_nghe = not nganh or _co_tu(chu, nganh) or _co_tu(chu, so_nhieu(nganh))
+    truoc, sau = [], []  # tính từ đứng trước nghề ("Funny Welder"), người/dịp đứng sau ("Welder Dad")
+
+    def ghep(duoi=""):
+        if co_nghe:
+            phan = [chu] + truoc + sau
+        else:
+            phan = [chu] + truoc + [nganh] + sau
+        return " ".join(p for p in phan if p) + duoi
+
     cho = next((w for w in tk if w.startswith("for ")), None)
     co_gifts = "gifts" in tk or cho is not None
+    t0 = ghep()
     duoi = ""
-    if co_gifts and not _co_tu(t, "gifts") and not _co_tu(t, "gift"):
-        duoi = " Gifts" + (" " + chu_hoa(cho) if cho and not _co_tu(t, cho) else "")
-        if len(t) + len(duoi) > toi_da:
-            duoi = " Gifts" if len(t) + 6 <= toi_da else ""
+    if co_gifts and not _co_tu(t0, "gifts") and not _co_tu(t0, "gift"):
+        duoi = " Gifts" + (" " + chu_hoa(cho) if cho and not _co_tu(t0, cho) else "")
+        if len(t0) + len(duoi) > toi_da:
+            duoi = " Gifts" if len(t0) + 6 <= toi_da else ""
     nam, nu = {"dad", "husband", "grandpa", "for men", "for him", "for dad"}, {"mom", "wife", "for women",
                                                                               "for her", "for mom"}
+    dung_sau = nam | nu | set(TU_MUA) | {"life", "crew", "squad", "team", "pride", "retirement", "appreciation",
+                                         "birthday", "week"}
     nguoi = set()  # đã có người nhận nào (dad/mom...) -> không thêm người thứ hai / trái giới
     if cho:
         nguoi.add(cho)
     for w in tk:
-        if w == "gifts" or w.startswith("for ") or _co_tu(t, w) or _co_tu(duoi, w):
+        if w == "gifts" or w.startswith("for ") or _co_tu(ghep(), w) or _co_tu(duoi, w):
             continue
         if w in nam | nu:
-            if any(n in nam | nu for n in nguoi if not n.startswith("for ")) or \
-                    (w in nam and nguoi & nu) or (w in nu and nguoi & nam):
+            if any(n in nam | nu for n in nguoi if not n.startswith("for ")) or                     (w in nam and nguoi & nu) or (w in nu and nguoi & nam):
                 continue
-        thu = t + " " + chu_hoa(w)
-        if len(thu) + len(duoi) <= toi_da:
-            t = thu
+        ds = sau if w in dung_sau else truoc
+        ds.append(chu_hoa(w))
+        if len(ghep(duoi)) <= toi_da:
             if w in nam | nu:
                 nguoi.add(w)
-    return chu_hoa(t + duoi)
+        else:
+            ds.pop()
+    return chu_hoa(ghep(duoi))
 
 
 def tao_brand(nganh, tk):
@@ -630,9 +674,9 @@ def soat(kq):
     return loi
 
 
-def tao(chu, nganh, tk, brand=None, cau=None):
+def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False):
     """cau = câu gợi ý Amazon thô (goi_y_amazon) -> bullet/mô tả dùng cụm khách gõ thật; None = văn mẫu."""
-    kq = {"title": tao_title(chu, nganh, tk), "brand": brand or tao_brand(nganh, tk)}
+    kq = {"title": tao_title(chu, nganh, tk, cho_mua=cho_mua), "brand": brand or tao_brand(nganh, tk)}
     cum = None
     if cau:
         cum = cum_tu_khoa(nganh, cau, tk, _boi_canh(nganh, tk)[1])

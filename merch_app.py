@@ -53,6 +53,7 @@ class App(tk.Tk):
         self.anh_tk = None
         self._hen = None
         self.v_nganh, self.v_brand, self.v_chu = tk.StringVar(), tk.StringVar(), tk.StringVar()
+        self.v_mua = tk.BooleanVar(value=False)
         gd.thanh_tren(self, "Tiêu đề + từ khoá Amazon Merch", ten="Merch Title", chu_logo="MT")
         than = tk.Frame(self, bg=gd.KEM)
         than.pack(fill="both", expand=True)
@@ -122,8 +123,15 @@ class App(tk.Tk):
 
         tk.Label(p, text="Từ khoá — Amazon xếp hạng (khách gõ nhiều đứng trước), bỏ tick để không dùng",
                  bg=gd.KEM, fg=gd.NAVY, font=(gd.FONT, 9, "bold")).pack(anchor="w", pady=(10, 0))
-        self.l_nguon = tk.Label(p, text="", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8))
-        self.l_nguon.pack(anchor="w")
+        h3 = tk.Frame(p, bg=gd.KEM)
+        h3.pack(fill="x")
+        self.l_nguon = tk.Label(h3, text="", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8))
+        self.l_nguon.pack(side="left")
+        tk.Checkbutton(h3, text="Cho từ mùa/dịp vào Title (chỉ bật cho design mùa vụ)", variable=self.v_mua,
+                       bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8), activebackground=gd.KEM,
+                       selectcolor=gd.TRANG, command=self._hen_tao).pack(side="right")
+        tk.Label(p, text="(mùa)/(dịp) = chỉ dùng ở Bullet + Description, trừ khi chữ design nói về mùa/dịp đó "
+                         "— title giữ bán được quanh năm", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(anchor="w")
         self.k_tk = tk.Frame(p, bg=gd.KEM)
         self.k_tk.pack(fill="x")
 
@@ -265,8 +273,9 @@ class App(tk.Tk):
             v = tk.BooleanVar(value=cu[w].get() if w in cu else True)
             v.trace_add("write", lambda *a: self._hen_tao())
             self.chon[w] = v
-            tk.Checkbutton(self.k_tk, text=f"{j + 1}. {w}", variable=v, bg=gd.KEM, fg=gd.CHU, font=(gd.FONT, 9),
-                           activebackground=gd.KEM, selectcolor=gd.TRANG, anchor="w", width=13).grid(
+            nhan = f"{j + 1}. {w}" + (" (mùa)" if w in mt.TU_MUA else " (dịp)" if w in mt.TU_DIP else "")
+            tk.Checkbutton(self.k_tk, text=nhan, variable=v, bg=gd.KEM, fg=gd.CHU, font=(gd.FONT, 9),
+                           activebackground=gd.KEM, selectcolor=gd.TRANG, anchor="w", width=17).grid(
                 row=j // 6, column=j % 6, sticky="w")
         self._tao()
 
@@ -285,7 +294,7 @@ class App(tk.Tk):
         if chu.startswith("("):
             return
         kq = mt.tao(chu, self.v_nganh.get().strip(), self._tk_chon(), self.v_brand.get().strip() or None,
-                    self.cau)
+                    self.cau, self.v_mua.get())
         for k, *_ in O_RA:
             t = self.o_ra[k]
             t.delete("1.0", "end")
@@ -323,7 +332,7 @@ class App(tk.Tk):
             return
         self._luu_sua()
         ds, nganh = list(self.ds), self.v_nganh.get().strip()
-        tk_, brand, cau = self._tk_chon(), self.v_brand.get().strip() or None, list(self.cau)
+        tk_, brand, cau, mua = self._tk_chon(), self.v_brand.get().strip() or None, list(self.cau), self.v_mua.get()
         ra = os.path.join(os.path.dirname(ds[self.i]), "_MERCH.csv")
         self.nut_csv.bat(False)
 
@@ -337,7 +346,7 @@ class App(tk.Tk):
                         self.ocr[d] = (mt.doc_chu(d, nganh), mt.chu_tu_ten_file(d))
                     dong = self.ocr[d][0]
                     chu = self.sua.get(d) or mt.chu_chinh(dong, nganh=nganh)
-                    kq = mt.tao(chu, nganh, tk_, brand, cau)
+                    kq = mt.tao(chu, nganh, tk_, brand, cau, mua)
                     kq.update(file=os.path.basename(d), chu=chu, ocr=" | ".join(d[0] for d in dong))
                 except Exception as e:
                     kq = {"file": os.path.basename(d), "loi": [f"lỗi: {e}"]}
