@@ -168,6 +168,7 @@ def xem_truoc(png, ra, nen):
 
 
 def ten_file(s):
+    s = re.sub(r"\s*\(.*?\)", "", s)  # bỏ dòng phụ trong ngoặc khỏi tên file
     s = re.sub(r'[\\/:*?"<>|]+', "", s).strip()
     return s[:120].rstrip(". ") or "redesign"
 
