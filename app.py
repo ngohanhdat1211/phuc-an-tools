@@ -20,7 +20,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
 from PIL import Image, ImageTk
 
@@ -28,6 +28,7 @@ import giao_dien as gd
 
 GOC = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(GOC, "tach_design.py")
+REDESIGN = os.path.join(GOC, "redesign.py")
 DUOI_ANH = (".jpg", ".jpeg", ".png", ".webp")
 O_XEM = (240, 262)  # khung anh tren ban xem truoc
 O_LUOI = (118, 135)  # o design trong luoi ket qua
@@ -141,6 +142,8 @@ class App(tk.Tk):
         day.pack(side="bottom", fill="x", padx=24, pady=24)
         self.nut_chay = gd.Nut(day, "Tách design", self._bat_dau, "chinh", rong=252, cao=48, co=13)
         self.nut_chay.pack(fill="x")
+        self.nut_rd = gd.Nut(day, "✦  Redesign bằng Claude", self._redesign, "toi", rong=252, cao=36, co=10)
+        self.nut_rd.pack(fill="x", pady=(10, 0))
         l = tk.Label(day, text="Xem nhật ký", bg=gd.NAVY, fg="#AEB8D6", font=(gd.FONT, 9, "underline"),
                      cursor="hand2")
         l.pack(pady=(10, 0))
@@ -400,6 +403,62 @@ class App(tk.Tk):
             self.q.put(("ket", (ra, xem)))
         self.q.put(("xong", None))
 
+    # ================= redesign =================
+    def _redesign(self):
+        """Chọn design đã tách -> Claude (gói Max trên máy) vẽ mẫu mới cùng ngách -> thư mục Redesign Claude."""
+        if self.dang_chay:
+            return
+        goc = next((os.path.join(p, "Design Claude") for p in self.ds
+                    if os.path.isdir(os.path.join(p, "Design Claude"))), None)
+        ds = filedialog.askopenfilenames(title="Chọn design để redesign", initialdir=goc,
+                                         filetypes=[("Ảnh", "*.png *.jpg *.jpeg *.webp")])
+        if not ds:
+            return
+        so = simpledialog.askinteger("Redesign", "Mỗi design làm bao nhiêu mẫu mới? (1-5)\n"
+                                     "Mỗi mẫu ~2 phút, dùng hạn mức gói Claude Max.", initialvalue=1,
+                                     minvalue=1, maxvalue=5, parent=self)
+        if not so:
+            return
+        self.dang_chay = True
+        self.ket_qua, self.anh_luoi, self.dem_loi = [], [], 0
+        self.nut_chay.bat(False)
+        self.nut_rd.bat(False)
+        self.nut_rd.doi_chu("Claude đang vẽ…")
+        self.thanh.dat(0)
+        self._ve_luoi()
+        threading.Thread(target=self._chay_redesign, args=(list(ds), so), daemon=True).start()
+
+    def _chay_redesign(self, ds, so):
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        co = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        tong, xong = len(ds) * so, 0
+        for k, p in enumerate(ds, 1):
+            self.q.put(("log", f"===== Redesign [{k}/{len(ds)}] {p}"))
+            self._bao_dang(p, xong + 1, tong, 1, 1)
+            try:
+                tt = subprocess.Popen([python_exe(), "-u", REDESIGN, p, "--so", str(so)], stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT, env=env, creationflags=co, encoding="utf-8",
+                                      errors="replace", cwd=GOC)
+            except OSError as e:
+                self.q.put(("loi", f"Không chạy được: {e}"))
+                continue
+            for dong in tt.stdout:
+                dong = dong.rstrip()
+                self.q.put(("log", dong))
+                if dong.startswith("Da luu:"):
+                    ra = dong.split(":", 1)[1].strip()
+                    xong += 1
+                    self.dang = {"ten": "", "i": xong, "n": tong}
+                    try:
+                        self.q.put(("design", (ra, anh_nho(ra, O_XEM), anh_nho(ra, O_LUOI))))
+                    except OSError:
+                        pass
+                    self.q.put(("ket", (os.path.dirname(ra), None)))
+                elif "LỖI" in dong or "Không thấy" in dong:
+                    self.q.put(("loi", dong))
+            tt.wait()
+        self.q.put(("xong", None))
+
     def _bao_dang(self, mockup, i, n, k, tong):
         try:
             mock = anh_nho(mockup, O_XEM).convert("RGB")
@@ -447,6 +506,8 @@ class App(tk.Tk):
         self.dang_chay = False
         self.nut_chay.bat(True)
         self.nut_chay.doi_chu("Tách design")
+        self.nut_rd.bat(True)
+        self.nut_rd.doi_chu("✦  Redesign bằng Claude")
         self.thanh.dat(1, loi=bool(self.dem_loi))
         self.nut_mo.bat(bool(self.ket_qua))
         self.nut_xem.bat(any(x for _, x in self.ket_qua))
