@@ -1,5 +1,5 @@
 {
- "cap_nhat_luc": "2026-11-05 23:50",
+ "cap_nhat_luc": "2026-11-05 23:51",
  "etsy": {
   "file": {
    "app.py": "1eeb040376115b52019d9e792f14d6321c945e550ef3b600988e3c1bded448c2",
@@ -14,7 +14,7 @@
  "merch": {
   "file": {
    "merch_app.py": "ac72d0336af4149167e935bcd2d88a7fc7d3732043e483f84f3d98988028d169",
-   "merch_tieu_de.py": "c30f3d887080e578af40d8d39c58b65f3ee5e3cc72ba9c56ed1d15471d8a1173",
+   "merch_tieu_de.py": "1951358228c839a725644e9559a78b4bfe69675a7badaa436572cff22a016792",
    "giao_dien.py": "e3dcc23e6f86681278f6291917e6f0f56f560a54c8f9fc861d9cab215ff4cfb9",
    "tu_cap_nhat.py": "e1953b48a348707d531737ab20960d322c71778c4f410f65cef2d17dc030bed5"
   }

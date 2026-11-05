@@ -577,7 +577,10 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False):
     tk = tk_cho_title(tk, chu, cho_mua)
     chu = re.sub(r"\s+", " ", chu).strip()
     if nganh and (_co_tu(chu, nganh) or _co_tu(chu, so_nhieu(nganh))):
-        chu_max = max(chu_max, toi_da - len(" Gifts For Men"))  # đã có nghề: câu design dài được tới 46
+        # đã có nghề: câu vừa chỗ cho " Gifts" thì giữ trọn (không cắt cụt chữ cuối), dài hơn thì cắt ở 46
+        chu_max = toi_da - 6 if len(chu) <= toi_da - 6 else max(chu_max, toi_da - len(" Gifts For Men"))
+    if nganh and chu.lower() == nganh.lower():  # design chỉ ghi tên nghề -> "Proud Concrete Finisher", không "... Proud"
+        chu = ""
     if len(chu) > chu_max:  # câu design dài: cắt ở ranh giới từ, chừa chỗ cho từ khoá
         chu = chu[:chu_max + 1].rsplit(" ", 1)[0].rstrip(",;-")
     co_nghe = not nganh or _co_tu(chu, nganh) or _co_tu(chu, so_nhieu(nganh))
@@ -590,7 +593,9 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False):
             phan = [chu] + truoc + [nganh] + sau
         return " ".join(p for p in phan if p) + duoi
 
-    cho = next((w for w in tk if w.startswith("for ")), None)
+    gioi = _boi_canh(nganh, tk, chu)[1]
+    trai = NU if gioi == "nam" else (NAM if gioi == "nu" else set())  # design nói về vợ -> không "For Men"
+    cho = next((w for w in tk if w.startswith("for ") and w not in trai), None)
     co_gifts = "gifts" in tk or cho is not None
     t0 = ghep()
     duoi = ""
