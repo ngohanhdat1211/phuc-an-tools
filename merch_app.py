@@ -51,8 +51,8 @@ class App(tk.Tk):
         self.tk_list, self.chon, self.cau = [], {}, []
         self.claude = {}  # duong -> kết quả Claude Opus nhìn ảnh (kiểu, chữ, giới, rủi ro)
         self.tu_dong = {}  # duong -> chữ chính tool tự điền (để biết anh có sửa tay không)
-        self.tu_tat = set()
-        self.tk_them = []  # ô tick người nhận theo chữ design: for wife, for husband...  # từ khoá tool tự bỏ tick vì không hợp kiểu design (funny ở design tự hào...)
+        self.tu_tat = set()  # từ khoá tool tự bỏ tick vì không hợp kiểu design (funny ở design tự hào...)
+        self.tk_them = []  # ô tick người nhận theo chữ design: for wife, for husband...
         self.nganh_da_lay = None
         self.anh_tk = None
         self._hen = None
@@ -154,9 +154,10 @@ class App(tk.Tk):
         tk.Checkbutton(h3, text="Cho từ mùa/dịp vào Title (chỉ bật cho design mùa vụ)", variable=self.v_mua,
                        bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8), activebackground=gd.KEM,
                        selectcolor=gd.TRANG, command=self._hen_tao).pack(side="right")
-        tk.Label(p, text="(mùa)/(dịp)/(người) = chỉ dùng ở Bullet + Description, trừ khi chữ design có từ đó "
-                         "— title bán quanh năm. Từ hài/tự hào tự tick theo Kiểu design. (design) = người nhận trong chữ design, "
-                         "tick để title ra \"Gifts For Wife\"...", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(anchor="w")
+        tk.Label(p, text="(mùa)/(dịp)/(người) = chỉ ở Bullet + Description trừ khi chữ design có từ đó. "
+                         "(thêm) = anh tick thì vào Title, vd for wife → \"Gifts For Wife\". "
+                         "Từ hài/tự hào tự tick theo Kiểu design.", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8),
+                 wraplength=760, justify="left").pack(anchor="w")
         self.k_tk = tk.Frame(p, bg=gd.KEM)
         self.k_tk.pack(fill="x")
 
@@ -319,19 +320,25 @@ class App(tk.Tk):
         self._ve_luoi()
         self._tao()
 
+    def _luoi(self):
+        """Ô tick: người nhận trong chữ design + từ khoá Amazon + ô người nhận luôn có (mom, wife, for mom...)."""
+        if not self.tk_list:
+            return []
+        return list(dict.fromkeys(self.tk_them + self.tk_list + mt.THEM_CO_DINH))
+
     def _ve_luoi(self):
         """Ô tick = người nhận lấy từ chữ design ("for wife"... mặc định chưa tick) + từ khoá Amazon."""
         for w in self.k_tk.winfo_children():
             w.destroy()
         cu = self.chon
         self.chon = {}
-        luoi = [w for w in self.tk_them if w not in self.tk_list] + self.tk_list
+        luoi = self._luoi()
         for j, w in enumerate(luoi):
-            v = tk.BooleanVar(value=cu[w].get() if w in cu else w not in self.tk_them)
+            v = tk.BooleanVar(value=cu[w].get() if w in cu else w in self.tk_list)
             v.trace_add("write", lambda *a: self._hen_tao())
             self.chon[w] = v
             nhan = f"{j + 1}. {w}" + (" (mùa)" if w in mt.TU_MUA else " (dịp)" if w in mt.TU_DIP
-                                      else " (người)" if w in mt.NGUOI_NHAN else " (design)" if w in self.tk_them
+                                      else " (người)" if w in mt.NGUOI_NHAN else " (thêm)" if w not in self.tk_list
                                       else "")
             tk.Checkbutton(self.k_tk, text=nhan, variable=v, bg=gd.KEM, fg=gd.CHU, font=(gd.FONT, 9),
                            activebackground=gd.KEM, selectcolor=gd.TRANG, anchor="w", width=17).grid(
@@ -344,8 +351,7 @@ class App(tk.Tk):
         self._hen = self.after(250, self._tao)
 
     def _tk_chon(self):
-        luoi = [w for w in self.tk_them if w not in self.tk_list] + self.tk_list
-        return [w for w in luoi if self.chon.get(w) is not None and self.chon[w].get()]
+        return [w for w in self._luoi() if self.chon.get(w) is not None and self.chon[w].get()]
 
     def _tao(self):
         self._hen = None
@@ -360,7 +366,7 @@ class App(tk.Tk):
             self._ve_luoi()
         kq = mt.tao(chu, self.v_nganh.get().strip(), self._tk_chon(), self.v_brand.get().strip() or None,
                     self.cau, self.v_mua.get(), self.sua_giong.get(d) or (cl or {}).get("giong"), self._ocr_hien(),
-                    (cl or {}).get("gioi"))
+                    (cl or {}).get("gioi"), [w for w in self._tk_chon() if w not in self.tk_list])
         self._tick_theo_giong(kq["giong"], chu)
         rr = (cl or {}).get("rui_ro") or []
         self.l_rui_ro.config(text=("⚠ Claude thấy rủi ro: " + " · ".join(rr)) if rr else "")
@@ -454,6 +460,7 @@ class App(tk.Tk):
         self._luu_sua()
         ds, nganh = list(self.ds), self.v_nganh.get().strip()
         tk_, brand, cau, mua = self._tk_chon(), self.v_brand.get().strip() or None, list(self.cau), self.v_mua.get()
+        ep = [w for w in tk_ if w not in self.tk_list]  # ô người nhận anh tick thêm -> ép vào title
         giong_tay = dict(self.sua_giong)
         ra = os.path.join(os.path.dirname(ds[self.i]), "_MERCH.csv")
         self.nut_csv.bat(False)
@@ -470,7 +477,7 @@ class App(tk.Tk):
                     cl = self.claude.get(d) or mt.nap_claude(d) or {}
                     chu = self.sua.get(d) or (mt.chu_claude(cl) if cl else mt.chon_chu(dong, ten, nganh))
                     kq = mt.tao(chu, nganh, tk_, brand, cau, mua, giong_tay.get(d) or cl.get("giong"),
-                                " ".join([x[0] for x in dong] + list(ten)), cl.get("gioi"))
+                                " ".join([x[0] for x in dong] + list(ten)), cl.get("gioi"), ep)
                     kq["rui_ro"] = " · ".join(cl.get("rui_ro") or [])
                     kq["giong"] = mt.GIONG_TEN[kq["giong"]]
                     kq.update(file=os.path.basename(d), chu=chu, ocr=" | ".join(d[0] for d in dong))

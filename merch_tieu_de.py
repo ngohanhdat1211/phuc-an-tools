@@ -688,6 +688,9 @@ NGUOI_O_TICK = {"wife": "for wife", "husband": "for husband", "mom": "for mom", 
                 "grandma": "for grandma", "nana": "for grandma", "girlfriend": "for her", "boyfriend": "for him"}
 
 
+THEM_CO_DINH = ["for mom", "for wife", "for dad", "for husband", "mom", "wife"]  # ô tick luôn có, mặc định chưa tick
+
+
 def tk_theo_design(chu):
     """Ô tick người nhận lấy từ chữ design (thứ tự xuất hiện, không trùng)."""
     c = (chu or "").lower()
@@ -698,12 +701,12 @@ def tk_theo_design(chu):
     return ra
 
 
-def tk_cho_title(tk, chu, cho_mua=False):
+def tk_cho_title(tk, chu, cho_mua=False, ep=()):
     """Bỏ từ mùa/dịp (trừ khi design nói về nó hoặc cho_mua=True) + chỉ giữ 1 từ hài hước xếp hạng cao nhất."""
     c = (chu or "").lower()
     ra, co_hai = [], False
     for w in tk:
-        if w in NGUOI_NHAN and not _co_tu(c, w):  # "Dad"/"Mom" chỉ vào title khi design nói về họ
+        if w in NGUOI_NHAN and not _co_tu(c, w) and w not in ep:  # ep = anh tự tick thêm -> giữ  # "Dad"/"Mom" chỉ vào title khi design nói về họ
             continue
         goc = TU_MUA.get(w) or TU_DIP.get(w)
         if goc and not cho_mua and not any(g in c for g in goc):
@@ -716,9 +719,9 @@ def tk_cho_title(tk, chu, cho_mua=False):
     return ra
 
 
-def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False, gioi=None):
+def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False, gioi=None, ep=()):
     """Chữ design (<=40 ký tự) + nghề (nếu chưa có) + từ khoá quanh năm theo hạng Amazon; 'Gifts For X' đặt cuối."""
-    tk = tk_cho_title(tk, chu, cho_mua)
+    tk = tk_cho_title(tk, chu, cho_mua, ep)
     chu = re.sub(r"\s+", " ", chu).strip()
     if nganh and (_co_tu(chu, nganh) or _co_tu(chu, so_nhieu(nganh))):
         # đã có nghề: câu vừa chỗ cho " Gifts" thì giữ trọn (không cắt cụt chữ cuối), dài hơn thì cắt ở 46
@@ -739,7 +742,7 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False, gioi=
 
     gioi = _boi_canh(nganh, tk, chu, gioi)[1]
     trai = NU if gioi == "nam" else (NAM if gioi == "nu" else set())  # design nói về vợ -> không "For Men"
-    cho = next((w for w in tk if w.startswith("for ") and w not in trai), None)
+    cho = next((w for w in ep if w.startswith("for ") and w in tk), None) or         next((w for w in tk if w.startswith("for ") and w not in trai), None)
     co_gifts = "gifts" in tk or cho is not None
     t0 = ghep()
     duoi = ""
@@ -918,7 +921,7 @@ def soat(kq):
     return loi
 
 
-def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False, giong=None, ocr="", gioi=None):
+def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False, giong=None, ocr="", gioi=None, ep=()):
     """cau = câu gợi ý Amazon thô (goi_y_amazon) -> bullet/mô tả dùng cụm khách gõ thật; None = văn mẫu.
     giong = 'hai' / 'hao' / 'trung' (None = tự đoán từ chữ design)."""
     dau = []
@@ -929,7 +932,7 @@ def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False, giong=None, ocr="",
         gioi = _boi_canh(nganh, tk, chu)[1]
         if gioi == "ca" and ocr:
             gioi = _boi_canh(nganh, tk, ocr)[1]
-    kq = {"title": tao_title(chu, nganh, tk, cho_mua=cho_mua, gioi=gioi), "brand": brand or tao_brand(nganh, tk)}
+    kq = {"title": tao_title(chu, nganh, tk, cho_mua=cho_mua, gioi=gioi, ep=ep), "brand": brand or tao_brand(nganh, tk)}
     cum = None
     if cau:
         cum = cum_tu_khoa(nganh, cau, tk, None if gioi == "ca" else gioi == "nu")
