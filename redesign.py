@@ -95,6 +95,27 @@ If everything is 8+ and error-free, do not touch the file.
 Answer with exactly one line: OK or FIXED"""
 
 
+THEM_NV = """
+
+KEEP-CHARACTER MODE (overrides the illustration rules above): the buyer owns this character artwork and wants it
+kept exactly: {nv} ({w}x{h} px, transparent PNG - look at it). Place it ONCE with
+<image href="nhan_vat.png" x=".." y=".." width=".." height=".." preserveAspectRatio="xMidYMid meet"/> using its exact
+aspect ratio {tl:.3f} (width/height) - never distort, crop or redraw it; make it big (at least 50% of canvas height).
+Some edges of the character image are hard straight cuts (where other artwork used to overlap): look at the PNG and
+hide every hard cut - put it at the canvas bottom edge, or cover it with the text block / paint splash drawn ON TOP
+(text over the character needs a thick dark outline or shadow to stay readable). Do not draw any other person.
+Design NEW text + layout + background effects around her/him so it looks like one finished premium design,
+same vibe as the reference, clearly different arrangement from the reference.
+No rectangular panels, boxes or solid color blocks behind text (looks like a poster, heavy ink on a shirt):
+backgrounds are only organic paint splashes / brush strokes with irregular soft edges, drips and splatter dots,
+covering at most ~40% of the canvas so the shirt color shows through around the design."""
+
+SOAT_NV = """
+This design keeps the buyer's own character artwork (<image href="nhan_vat.png">) - keep it, never remove, crop,
+distort or redraw it; just make sure no hard straight cut edge of it is visible (cover with text/splash or move it).
+Remove any rectangular panel/box/solid block behind text - replace with organic paint splashes."""
+
+
 def tim_claude():
     p = shutil.which("claude")
     if p:
@@ -184,7 +205,7 @@ def nen_ao(anh):
     return "dark" if sang > 110 else "light"
 
 
-def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print):
+def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print, nhan_vat=None):
     claude, chrome = claude or tim_claude(), chrome or tim_chrome()
     os.makedirs(ra, exist_ok=True)
     nen = nen_ao(anh)
@@ -193,12 +214,18 @@ def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print):
     for i in range(so):
         tam = tempfile.mkdtemp(prefix="rd_", dir=ra)
         svg = os.path.join(tam, "design.svg")
+        them, them_soat = "", ""
+        if nhan_vat:
+            shutil.copy(nhan_vat, os.path.join(tam, "nhan_vat.png"))
+            w, h = Image.open(nhan_vat).size
+            them = THEM_NV.format(nv=os.path.join(tam, "nhan_vat.png"), w=w, h=h, tl=w / h)
+            them_soat = SOAT_NV
         khac = (f'. Already made: {"; ".join(da)} - the new slogan must not reuse their key words or opening words, '
                 f'and the hero illustration must use different objects/scene (same vibe and buyer)') if da else ""
         t0 = time.time()
         bao(f"[{i + 1}/{so}] Claude đang nghĩ mẫu mới cho {os.path.basename(anh)}…")
         tra, phi = goi_claude(claude, DE_BAI.format(anh=os.path.abspath(anh), khac=khac, nen=nen, font=TEN_FONT,
-                                                    svg=svg, bo_cuc=BO_CUC[(i + lech) % len(BO_CUC)]), tam, os.path.dirname(os.path.abspath(anh)))
+                                                    svg=svg, bo_cuc=BO_CUC[(i + lech) % len(BO_CUC)]) + them, tam, os.path.dirname(os.path.abspath(anh)))
         m = re.search(r"SLOGAN:\s*(.+)", tra)
         cau = m.group(1).strip().strip('"') if m else f"redesign {i + 1}"
         if not os.path.exists(svg):
@@ -209,7 +236,7 @@ def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print):
             xem = os.path.join(tam, "xem.jpg")
             xem_truoc(png, xem, nen)
             bao(f"[{i + 1}/{so}] Claude soát lại bản vẽ…")
-            tra2, phi2 = goi_claude(claude, SOAT.format(xem=xem, svg=svg, nen=nen, anh=os.path.abspath(anh)), tam,
+            tra2, phi2 = goi_claude(claude, SOAT.format(xem=xem, svg=svg, nen=nen, anh=os.path.abspath(anh)) + them_soat, tam,
                                      os.path.dirname(os.path.abspath(anh)))
             phi += phi2
             if "FIXED" in tra2.upper():
@@ -222,6 +249,11 @@ def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print):
             dich = os.path.join(ra, f"{ten} ({n}).png")
             n += 1
         shutil.move(png, dich)
+        if nhan_vat:  # .svg trỏ tới ảnh nhân vật để kèm bên cạnh
+            ten_nv = os.path.basename(dich[:-4]) + "_nhan_vat.png"
+            shutil.copy(nhan_vat, os.path.join(ra, ten_nv))
+            noi = open(svg, encoding="utf-8").read().replace('href="nhan_vat.png"', f'href="{ten_nv}"')
+            open(svg, "w", encoding="utf-8").write(noi)
         shutil.move(svg, dich[:-4] + ".svg")
         shutil.rmtree(tam, ignore_errors=True)
         da.append(cau)
@@ -240,6 +272,7 @@ def main():
     ap.add_argument("--ra")
     ap.add_argument("--mo-hinh", help="opus | sonnet | haiku (bỏ trống = mặc định)")
     ap.add_argument("--muc", help="mức suy nghĩ: low | medium | high")
+    ap.add_argument("--giu-nhan-vat", help="PNG nhân vật đã tách (anh có quyền dùng) -> giữ nguyên, chỉ làm lại chữ + bố cục")
     a = ap.parse_args()
     ds = [a.nguon] if os.path.isfile(a.nguon) else sorted(
         f for f in glob.glob(os.path.join(a.nguon, "*")) if f.lower().endswith(DUOI))
@@ -250,7 +283,7 @@ def main():
             if os.path.basename(os.path.dirname(os.path.abspath(anh))) == "Design Claude" \
             else (a.ra or os.path.join(os.path.dirname(os.path.abspath(anh)), "Redesign Claude"))
         try:
-            redesign(anh, os.path.normpath(ra), a.so, not a.khong_soat, claude, chrome)
+            redesign(anh, os.path.normpath(ra), a.so, not a.khong_soat, claude, chrome, nhan_vat=a.giu_nhan_vat)
         except Exception as e:
             if any(k in str(e).lower() for k in ("limit", "quota", "usage")):  # hết hạn mức Max -> dừng cả loạt
                 print(f"LỖI hết hạn mức Claude Max, dừng loạt. Chờ hạn mức hồi rồi chạy lại các mẫu còn lại. ({e})")
