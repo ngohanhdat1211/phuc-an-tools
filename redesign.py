@@ -72,6 +72,9 @@ def tim_chrome():
     sys.exit("Không thấy Chrome/Edge để xuất PNG.")
 
 
+MO_HINH = {"model": None, "effort": None}  # đặt từ dòng lệnh: --mo-hinh sonnet --muc low
+
+
 def goi_claude(claude, cau, cwd, them_thu_muc):
     env = dict(os.environ)
     env.pop("ANTHROPIC_API_KEY", None)  # ép dùng tài khoản Max, không tính tiền API
@@ -181,9 +184,12 @@ def main():
     ap.add_argument("--so", type=int, default=1, help="số mẫu mới cho mỗi design")
     ap.add_argument("--khong-soat", action="store_true")
     ap.add_argument("--ra")
+    ap.add_argument("--mo-hinh", help="opus | sonnet | haiku (bỏ trống = mặc định)")
+    ap.add_argument("--muc", help="mức suy nghĩ: low | medium | high")
     a = ap.parse_args()
     ds = [a.nguon] if os.path.isfile(a.nguon) else sorted(
         f for f in glob.glob(os.path.join(a.nguon, "*")) if f.lower().endswith(DUOI))
+    MO_HINH.update(model=a.mo_hinh, effort=a.muc)
     claude, chrome = tim_claude(), tim_chrome()
     for anh in ds:
         ra = a.ra or os.path.join(os.path.dirname(os.path.abspath(anh)), "..", "Redesign Claude") \

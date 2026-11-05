@@ -19,7 +19,7 @@ import sys
 import threading
 import webbrowser
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
@@ -54,6 +54,8 @@ class App(tk.Tk):
         self._hen = None
         self.v_nganh, self.v_brand, self.v_chu = tk.StringVar(), tk.StringVar(), tk.StringVar()
         self.v_mua = tk.BooleanVar(value=False)
+        self.v_giong = tk.StringVar(value="Tự đoán")
+        self.sua_giong = {}  # duong -> 'hai'/'hao'/'trung' anh chọn tay
         gd.thanh_tren(self, "Tiêu đề + từ khoá Amazon Merch", ten="Merch Title", chu_logo="MT")
         than = tk.Frame(self, bg=gd.KEM)
         than.pack(fill="both", expand=True)
@@ -120,6 +122,15 @@ class App(tk.Tk):
         tk.Entry(p, textvariable=self.v_chu, font=(gd.FONT, 13), relief="solid", bd=1).pack(fill="x")
         self.k_goi_y = tk.Frame(p, bg=gd.KEM)
         self.k_goi_y.pack(fill="x", pady=(4, 0))
+        h4 = tk.Frame(p, bg=gd.KEM)
+        h4.pack(fill="x", pady=(6, 0))
+        tk.Label(h4, text="Kiểu design", bg=gd.KEM, fg=gd.NAVY, font=(gd.FONT, 9, "bold")).pack(side="left")
+        cb = ttk.Combobox(h4, textvariable=self.v_giong, state="readonly", width=20,
+                          values=["Tự đoán"] + list(mt.GIONG_TEN.values()))
+        cb.pack(side="left", padx=8)
+        cb.bind("<<ComboboxSelected>>", lambda e: self._doi_giong())
+        self.l_giong = tk.Label(h4, text="", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8))
+        self.l_giong.pack(side="left")
 
         tk.Label(p, text="Từ khoá — Amazon xếp hạng (khách gõ nhiều đứng trước), bỏ tick để không dùng",
                  bg=gd.KEM, fg=gd.NAVY, font=(gd.FONT, 9, "bold")).pack(anchor="w", pady=(10, 0))
@@ -223,7 +234,9 @@ class App(tk.Tk):
     def _sau_ocr(self, d):
         dong, ten = self.ocr[d]
         nganh = self.v_nganh.get().strip()
-        self.v_chu.set(self.sua.get(d) or mt.chu_chinh(dong, nganh=nganh))
+        g = self.sua_giong.get(d)
+        self.v_giong.set(mt.GIONG_TEN[g] if g else "Tự đoán")
+        self.v_chu.set(self.sua.get(d) or mt.chon_chu(dong, ten, nganh))
         for w in self.k_goi_y.winfo_children():
             w.destroy()
         tk.Label(self.k_goi_y, text="Bấm để thêm:", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(side="left")
@@ -237,6 +250,20 @@ class App(tk.Tk):
                          relief="solid", bd=1, cursor="hand2")
             l.pack(side="left", padx=2)
             l.bind("<Button-1>", lambda e, g=g: self._noi_chu(g))
+
+    def _doi_giong(self):
+        if self.ds:
+            ten = self.v_giong.get()
+            g = next((k for k, v in mt.GIONG_TEN.items() if v == ten), None)
+            if g:
+                self.sua_giong[self.ds[self.i]] = g
+            else:
+                self.sua_giong.pop(self.ds[self.i], None)
+        self._tao()
+
+    def _ocr_hien(self):
+        d = self.ds[self.i] if self.ds else None
+        return " ".join(x[0] for x in self.ocr.get(d, ([], []))[0]) if d else ""
 
     def _noi_chu(self, g):
         cu = self.v_chu.get().strip()
@@ -276,7 +303,7 @@ class App(tk.Tk):
             nhan = f"{j + 1}. {w}" + (" (mùa)" if w in mt.TU_MUA else " (dịp)" if w in mt.TU_DIP else "")
             tk.Checkbutton(self.k_tk, text=nhan, variable=v, bg=gd.KEM, fg=gd.CHU, font=(gd.FONT, 9),
                            activebackground=gd.KEM, selectcolor=gd.TRANG, anchor="w", width=17).grid(
-                row=j // 6, column=j % 6, sticky="w")
+                row=j // 5, column=j % 5, sticky="w")
         self._tao()
 
     # ---------------- ghép ----------------
@@ -293,8 +320,15 @@ class App(tk.Tk):
         chu = self.v_chu.get().strip()
         if chu.startswith("("):
             return
+        d = self.ds[self.i] if self.ds else None
         kq = mt.tao(chu, self.v_nganh.get().strip(), self._tk_chon(), self.v_brand.get().strip() or None,
-                    self.cau, self.v_mua.get())
+                    self.cau, self.v_mua.get(), self.sua_giong.get(d), self._ocr_hien())
+        if d in self.sua_giong:
+            self.l_giong.config(text="(anh chọn tay)")
+        else:
+            self.l_giong.config(text=f"Đoán: {mt.GIONG_TEN[kq['giong']]}"
+                                     + (f" — dấu hiệu: {', '.join(kq['dau_giong'][:5])}" if kq["dau_giong"]
+                                        else " — không thấy dấu hiệu hài/tự hào"))
         for k, *_ in O_RA:
             t = self.o_ra[k]
             t.delete("1.0", "end")
@@ -333,6 +367,7 @@ class App(tk.Tk):
         self._luu_sua()
         ds, nganh = list(self.ds), self.v_nganh.get().strip()
         tk_, brand, cau, mua = self._tk_chon(), self.v_brand.get().strip() or None, list(self.cau), self.v_mua.get()
+        giong_tay = dict(self.sua_giong)
         ra = os.path.join(os.path.dirname(ds[self.i]), "_MERCH.csv")
         self.nut_csv.bat(False)
 
@@ -344,9 +379,10 @@ class App(tk.Tk):
                 try:
                     if d not in self.ocr:
                         self.ocr[d] = (mt.doc_chu(d, nganh), mt.chu_tu_ten_file(d))
-                    dong = self.ocr[d][0]
-                    chu = self.sua.get(d) or mt.chu_chinh(dong, nganh=nganh)
-                    kq = mt.tao(chu, nganh, tk_, brand, cau, mua)
+                    dong, ten = self.ocr[d]
+                    chu = self.sua.get(d) or mt.chon_chu(dong, ten, nganh)
+                    kq = mt.tao(chu, nganh, tk_, brand, cau, mua, giong_tay.get(d), " ".join(x[0] for x in dong))
+                    kq["giong"] = mt.GIONG_TEN[kq["giong"]]
                     kq.update(file=os.path.basename(d), chu=chu, ocr=" | ".join(d[0] for d in dong))
                 except Exception as e:
                     kq = {"file": os.path.basename(d), "loi": [f"lỗi: {e}"]}

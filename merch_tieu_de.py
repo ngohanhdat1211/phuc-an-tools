@@ -271,6 +271,75 @@ def chu_chinh(dong, toi_da=40, nganh=""):
     return chu_hoa(cau or chon[0][:toi_da])
 
 
+def chon_chu(dong, ten, nganh=""):
+    """Chữ chính: tên file mockup thường ghi đủ câu design ('American by Birth, Concrete Finisher by Choice').
+    Dùng câu tên file khi nó chứa >=60% từ OCR đọc được (chữ >=3 ký tự); không thì lấy headline OCR."""
+    ocr = chu_chinh(dong, nganh=nganh)
+    tu_ocr = {w for d in dong for w in re.findall(r"[a-z']{3,}", d[0].lower())}
+    tot, diem_tot = "", 0.0
+    for t in ten or []:
+        t = re.sub(r"\s+", " ", t).strip(" ,.-")
+        tu_t = set(re.findall(r"[a-z']{3,}", t.lower()))
+        if not tu_ocr or not tu_t or len(t) > 70:
+            continue
+        diem = len(tu_ocr & tu_t) / len(tu_ocr)
+        if diem >= 0.6 and diem > diem_tot and len(t) > len(ocr):
+            tot, diem_tot = t, diem
+    return chu_hoa(tot) if tot else ocr
+
+
+# Kiểu design đoán từ chữ: hài hước / tự hào (yêu nước) / trung tính.
+# Amazon xếp "funny" cao cho mọi nghề, nhưng gắn funny cho design nghiêm túc = khách tìm hài thấy không hợp -> không bấm.
+DAU_HAI = ["because", "badass", "accident", "therapy", "nobody", "coffee", "beer", "wine", "drink", "sarcas",
+           "funny", "joke", "humor", "lol", "don't", "dont", "hourly rate", "trust me", "warning", "caution",
+           "i'm not", "im not", "assume", "shit", "hell", "damn", "crazy", "weird", "nap", "lazy", "ask me",
+           "i paused", "survived", "make it look", "kinda", "probably", "i fix", "if you", "you can't",
+           "older", "old man", "grumpy", "spoiler", "nope", "oops", "what part of", "may contain", "level",
+           "loading", "retirement plan", "zombie", "happy hour", "excuse", "my wife", "?"]
+DAU_HAO = ["american", "america", "usa", "u.s.a", "flag", "freedom", "patriot", "proud", "pride", "honor",
+           "veteran", "brave", "by birth", "by choice", "legend", "built", "strong", "hardworking",
+           "hard working", "union", "skilled", "god", "faith", "blessed", "respect", "dedicat", "heart", "soul",
+           "blood", "sweat", "grit", "tough", "born", "since", "we the people", "land of", "home of", "hero"]
+DAU_YEU_NUOC = ["american", "america", "usa", "u.s.a", "flag", "freedom", "patriot", "we the people",
+                "land of", "home of", "veteran"]
+GIONG_TEN = {"hai": "Hài hước", "hao": "Tự hào / yêu nước", "trung": "Trung tính"}
+TU_HAI = {"funny", "humor", "humorous", "sarcastic", "joke", "pun", "novelty", "gag"}
+TU_HAO = {"proud", "pride", "patriotic", "american", "usa", "flag"}
+
+
+def _dau(c, ds):
+    return [d for d in ds if (d in c if (" " in d or not d.isalpha()) else re.search(r"(?<![a-z])" + d, c))]
+
+
+def doan_giong(chu, ocr=""):
+    """Trả (kiểu, danh sách dấu hiệu). Đếm dấu hiệu chữ hài vs chữ tự hào trong câu design + chữ OCR."""
+    c = " " + (chu + " " + (ocr or "")).lower() + " "
+    hai, hao = _dau(c, DAU_HAI), _dau(c, DAU_HAO)
+    if len(hai) > len(hao) or (hai and len(hai) == len(hao)):
+        return "hai", hai
+    if hao:
+        return "hao", hao
+    return "trung", []
+
+
+def tk_theo_giong(tk, giong, chu=""):
+    """Hài: bỏ proud/patriotic, đảm bảo có funny. Tự hào: bỏ chữ hài, thêm proud (+ patriotic nếu yêu nước).
+    Trung tính: bỏ chữ hài."""
+    tk = list(tk)
+    if giong == "hai":
+        tk = [w for w in tk if w not in ("proud", "pride", "patriotic")]
+        if not TU_HAI & set(tk):
+            tk.insert(min(1, len(tk)), "funny")
+        return tk
+    tk = [w for w in tk if w not in TU_HAI]
+    if giong == "hao":
+        if _dau(" " + chu.lower() + " ", DAU_YEU_NUOC) and "patriotic" not in tk:
+            tk.insert(min(1, len(tk)), "patriotic")
+        if "proud" not in tk:
+            tk.insert(min(2, len(tk)), "proud")
+    return tk
+
+
 # ---------------- từ khoá Amazon ----------------
 def _goi_y(prefix, alias="aps"):
     """Ô gợi ý Amazon Mỹ. alias=fashion chỉ trả 1-3 câu, aps (mọi ngành) trả 10 (đo 05/11/2026)."""
@@ -290,11 +359,11 @@ def goi_y_amazon(nganh, lam_moi=False):
             dem = json.load(open(DEM, encoding="utf-8"))
         except (OSError, ValueError):
             dem = {}
-    if not lam_moi and k in dem and dem[k].get("ban") == 2 and time.time() - dem[k]["luc"] < 14 * 86400:
+    if not lam_moi and k in dem and dem[k].get("ban") == 3 and time.time() - dem[k]["luc"] < 14 * 86400:
         return dem[k]["cau"], "amazon (đệm)"
     tien_to = [k, k + " shirt", "funny " + k, k + " gifts", k + " gifts for", k + " shirt for",
                k + " t shirt", k + " hoodie", k + " shirt funny", "retired " + k, k + " dad", k + " mom",
-               k + " appreciation", k + " christmas"]
+               k + " appreciation", k + " christmas", "proud " + k, "patriotic " + k, "american " + k]
     cau = []
     loi = 0
     for p in tien_to:
@@ -309,7 +378,7 @@ def goi_y_amazon(nganh, lam_moi=False):
         time.sleep(0.25)
     if not cau:
         return [], "dựng sẵn (không gọi được Amazon)"
-    dem[k] = {"luc": time.time(), "cau": cau, "ban": 2}
+    dem[k] = {"luc": time.time(), "cau": cau, "ban": 3}
     os.makedirs(TAM, exist_ok=True)
     tmp = DEM + ".tmp"
     json.dump(dem, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -319,7 +388,7 @@ def goi_y_amazon(nganh, lam_moi=False):
 
 NGU_CANH = {"shirt", "shirts", "tshirt", "tshirts", "t", "tee", "tees", "gift", "gifts", "funny", "hoodie",
             "hoodies", "sweatshirt", "retired", "retirement", "appreciation", "christmas", "birthday", "humor",
-            "sarcastic", "proud", "dad", "mom", "wife", "husband", "life"}
+            "sarcastic", "proud", "dad", "mom", "wife", "husband", "life", "patriotic", "american"}
 CHO_AI = {"men", "women", "him", "her", "dad", "mom", "husband", "wife", "grandpa"}
 TU_RAC = {"teen", "boys", "girls", "kids", "toddler", "baby", "youth", "tester", "tool", "tools", "kit",
           "bag", "belt", "pouch", "pants", "boots", "gloves", "socks", "book", "books", "card", "cards",
@@ -474,7 +543,7 @@ TU_DIP = {"retirement": ("retire",), "retired": ("retire",), "birthday": ("birth
           "appreciation": ("appreciat", "thank"), "week": ("week",)}
 # Nhóm giọng điệu: title chỉ giữ 1 từ (xếp hạng cao nhất) -> không ra "Funny Proud Welder"
 NHOM_HAI = {"funny", "humor", "humorous", "sarcastic", "joke", "pun", "novelty", "proud", "cute", "awesome",
-            "cool", "badass"}
+            "cool", "badass", "patriotic", "gag"}
 
 
 def la_mua_dip(w):
@@ -501,8 +570,10 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False):
     """Chữ design (<=40 ký tự) + nghề (nếu chưa có) + từ khoá quanh năm theo hạng Amazon; 'Gifts For X' đặt cuối."""
     tk = tk_cho_title(tk, chu, cho_mua)
     chu = re.sub(r"\s+", " ", chu).strip()
+    if nganh and (_co_tu(chu, nganh) or _co_tu(chu, so_nhieu(nganh))):
+        chu_max = max(chu_max, toi_da - len(" Gifts For Men"))  # đã có nghề: câu design dài được tới 46
     if len(chu) > chu_max:  # câu design dài: cắt ở ranh giới từ, chừa chỗ cho từ khoá
-        chu = chu[:chu_max + 1].rsplit(" ", 1)[0]
+        chu = chu[:chu_max + 1].rsplit(" ", 1)[0].rstrip(",;-")
     co_nghe = not nganh or _co_tu(chu, nganh) or _co_tu(chu, so_nhieu(nganh))
     truoc, sau = [], []  # tính từ đứng trước nghề ("Funny Welder"), người/dịp đứng sau ("Welder Dad")
 
@@ -532,7 +603,8 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False):
         if w == "gifts" or w.startswith("for ") or _co_tu(ghep(), w) or _co_tu(duoi, w):
             continue
         if w in nam | nu:
-            if any(n in nam | nu for n in nguoi if not n.startswith("for ")) or                     (w in nam and nguoi & nu) or (w in nu and nguoi & nam):
+            if any(n in nam | nu for n in nguoi if not n.startswith("for ")) or \
+                    (w in nam and nguoi & nu) or (w in nu and nguoi & nam):
                 continue
         ds = sau if w in dung_sau else truoc
         ds.append(chu_hoa(w))
@@ -545,7 +617,7 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False):
 
 
 def tao_brand(nganh, tk):
-    loai = "Funny" if "funny" in tk[:6] else "Proud"
+    loai = "Funny" if TU_HAI & set(tk[:6]) else ("Patriotic" if "patriotic" in tk[:6] else "Proud")
     for b in (f"{loai} {nganh} Gifts Co", f"{nganh} Gifts Co", f"{nganh} Life", nganh):
         if len(b) <= BRAND_MAX:
             return b
@@ -579,7 +651,8 @@ def tao_bullets(chu, nganh, tk, cum=None):
     ng = [c for c, l in (cum or []) if l == "nguoi"]
     khac = [c for c, l in (cum or []) if l == "dip"]
     v = _chon(chu, 3)
-    vui = "funny" if hai_huoc else "great"
+    yeu_nuoc = "patriotic" in tk
+    vui = "funny" if hai_huoc else ("proud" if yeu_nuoc or "proud" in tk[:3] else "great")
     if qua:
         b1 = [f"{trich}design made for proud {nhieu}. A {vui} pick if you are shopping for {qua[0]} - "
               f"made for your {nguoi} on {dip_s}.",
@@ -622,7 +695,9 @@ def tao_mo_ta(chu, nganh, tk, cum=None):
     khac = [c for c, l in (cum or []) if l == "dip"][1:3]
     mo = f'"{chu}" is a bold design' if chu else "A bold design"
     p1 = (f"{mo} made for {nhieu} who take pride in what they do. "
-          f"{'It brings the kind of humor only people in the trade really get.' if hai_huoc else 'It says it all without a single word from you.'}")
+          + ("It brings the kind of humor only people in the trade really get." if hai_huoc else
+             "It stands for hard work, pride and the people who keep this country running." if "patriotic" in tk
+             else "It says it all without a single word from you."))
     if qua:
         p2 = (f"Looking for {' or '.join(qua)}? It makes a thoughtful pick for your {nguoi} - for {dip_s}, "
               f"a new job, or just to say thanks for the hard work.")
@@ -674,8 +749,13 @@ def soat(kq):
     return loi
 
 
-def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False):
-    """cau = câu gợi ý Amazon thô (goi_y_amazon) -> bullet/mô tả dùng cụm khách gõ thật; None = văn mẫu."""
+def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False, giong=None, ocr=""):
+    """cau = câu gợi ý Amazon thô (goi_y_amazon) -> bullet/mô tả dùng cụm khách gõ thật; None = văn mẫu.
+    giong = 'hai' / 'hao' / 'trung' (None = tự đoán từ chữ design)."""
+    dau = []
+    if giong is None:
+        giong, dau = doan_giong(chu, ocr)
+    tk = tk_theo_giong(tk, giong, chu + " " + (ocr or ""))
     kq = {"title": tao_title(chu, nganh, tk, cho_mua=cho_mua), "brand": brand or tao_brand(nganh, tk)}
     cum = None
     if cau:
@@ -684,21 +764,22 @@ def tao(chu, nganh, tk, brand=None, cau=None, cho_mua=False):
     kq["bullet1"], kq["bullet2"] = tao_bullets(chu, nganh, tk, cum)
     kq["description"] = tao_mo_ta(chu, nganh, tk, cum)
     kq["uspto"] = link_uspto(chu)
+    kq["giong"], kq["dau_giong"] = giong, dau
     kq["loi"] = soat(kq)
     return kq
 
 
 def lam_anh(duong, nganh, tk, brand=None, cau=None):
     dong = doc_chu(duong, nganh)
-    chu = chu_chinh(dong, nganh=nganh)
-    kq = tao(chu, nganh, tk, brand, cau)
+    chu = chon_chu(dong, chu_tu_ten_file(duong), nganh)
+    kq = tao(chu, nganh, tk, brand, cau, ocr=" ".join(d[0] for d in dong))
     kq.update(file=os.path.basename(duong), chu=chu, ocr=" | ".join(d[0] for d in dong),
               ten_file=" | ".join(chu_tu_ten_file(duong)))
     return kq
 
 
 # Cột CSV: ban_quyen để trống = chưa soát; Claude (skill soat-ban-quyen) ghi 🔴/🟡/🟢 + lý do vào đây
-COT_CSV = ["file", "chu", "title", "brand", "bullet1", "bullet2", "description", "loi", "ban_quyen", "uspto", "ocr"]
+COT_CSV = ["file", "chu", "giong", "title", "brand", "bullet1", "bullet2", "description", "loi", "ban_quyen", "uspto", "ocr"]
 
 
 def main():
@@ -716,7 +797,7 @@ def main():
     print(f"Nghề: {nganh} | từ khoá ({nguon}): {', '.join(tk[:12])}")
     if os.path.isfile(a.duong):
         kq = lam_anh(a.duong, nganh, tk, a.brand, cau)
-        for o in ("chu", "title", "brand", "bullet1", "bullet2", "description"):
+        for o in ("chu", "giong", "title", "brand", "bullet1", "bullet2", "description"):
             print(f"{o.upper():8} ({len(kq[o])}): {kq[o]}")
         print("Cảnh báo:", "; ".join(kq["loi"]) or "không")
         print("Tra nhãn hiệu USPTO:", kq["uspto"])
