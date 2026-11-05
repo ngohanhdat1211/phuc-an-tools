@@ -192,6 +192,9 @@ def main():
         try:
             redesign(anh, os.path.normpath(ra), a.so, not a.khong_soat, claude, chrome)
         except Exception as e:
+            if any(k in str(e).lower() for k in ("limit", "quota", "usage")):  # hết hạn mức Max -> dừng cả loạt
+                print(f"LỖI hết hạn mức Claude Max, dừng loạt. Chờ hạn mức hồi rồi chạy lại các mẫu còn lại. ({e})")
+                break
             print(f"LỖI {os.path.basename(anh)}: {e}")
 
 
