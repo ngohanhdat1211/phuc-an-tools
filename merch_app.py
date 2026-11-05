@@ -49,6 +49,7 @@ class App(tk.Tk):
         self.ocr = {}  # duong -> (dong OCR, goi y ten file)
         self.sua = {}  # duong -> chu chinh anh da sua
         self.tk_list, self.chon, self.cau = [], {}, []
+        self.tu_tat = set()  # từ khoá tool tự bỏ tick vì không hợp kiểu design (funny ở design tự hào...)
         self.nganh_da_lay = None
         self.anh_tk = None
         self._hen = None
@@ -141,8 +142,8 @@ class App(tk.Tk):
         tk.Checkbutton(h3, text="Cho từ mùa/dịp vào Title (chỉ bật cho design mùa vụ)", variable=self.v_mua,
                        bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8), activebackground=gd.KEM,
                        selectcolor=gd.TRANG, command=self._hen_tao).pack(side="right")
-        tk.Label(p, text="(mùa)/(dịp) = chỉ dùng ở Bullet + Description, trừ khi chữ design nói về mùa/dịp đó "
-                         "— title giữ bán được quanh năm", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(anchor="w")
+        tk.Label(p, text="(mùa)/(dịp)/(người) = chỉ dùng ở Bullet + Description, trừ khi chữ design có từ đó "
+                         "— title bán quanh năm. Từ hài/tự hào tự tick theo Kiểu design", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(anchor="w")
         self.k_tk = tk.Frame(p, bg=gd.KEM)
         self.k_tk.pack(fill="x")
 
@@ -300,7 +301,8 @@ class App(tk.Tk):
             v = tk.BooleanVar(value=cu[w].get() if w in cu else True)
             v.trace_add("write", lambda *a: self._hen_tao())
             self.chon[w] = v
-            nhan = f"{j + 1}. {w}" + (" (mùa)" if w in mt.TU_MUA else " (dịp)" if w in mt.TU_DIP else "")
+            nhan = f"{j + 1}. {w}" + (" (mùa)" if w in mt.TU_MUA else " (dịp)" if w in mt.TU_DIP
+                                      else " (người)" if w in mt.NGUOI_NHAN else "")
             tk.Checkbutton(self.k_tk, text=nhan, variable=v, bg=gd.KEM, fg=gd.CHU, font=(gd.FONT, 9),
                            activebackground=gd.KEM, selectcolor=gd.TRANG, anchor="w", width=17).grid(
                 row=j // 5, column=j % 5, sticky="w")
@@ -323,6 +325,7 @@ class App(tk.Tk):
         d = self.ds[self.i] if self.ds else None
         kq = mt.tao(chu, self.v_nganh.get().strip(), self._tk_chon(), self.v_brand.get().strip() or None,
                     self.cau, self.v_mua.get(), self.sua_giong.get(d), self._ocr_hien())
+        self._tick_theo_giong(kq["giong"], chu)
         if d in self.sua_giong:
             self.l_giong.config(text="(anh chọn tay)")
         else:
@@ -334,6 +337,22 @@ class App(tk.Tk):
             t.delete("1.0", "end")
             t.insert("1.0", kq[k])
         self._dem()
+
+    def _tick_theo_giong(self, giong, chu):
+        """Ô tick phản ánh đúng từ được dùng: design tự hào -> bỏ tick funny/humor..., design hài -> bỏ tick proud.
+        Từ tool tự bỏ sẽ tự tick lại khi sang design kiểu khác. Đổi bằng ô 'Kiểu design'."""
+        giu = set(mt.tk_theo_giong(self.tk_list, giong, chu))
+        bo = {w for w in self.tk_list if w not in giu}
+        for w in self.tk_list:
+            v = self.chon.get(w)
+            if v is None:
+                continue
+            if w in bo and v.get():
+                self.tu_tat.add(w)
+                v.set(False)
+            elif w not in bo and w in self.tu_tat:
+                self.tu_tat.discard(w)
+                v.set(True)
 
     def _lay(self, k):
         return self.o_ra[k].get("1.0", "end").strip()
