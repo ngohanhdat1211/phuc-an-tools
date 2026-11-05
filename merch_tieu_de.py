@@ -517,7 +517,7 @@ def goi_y_amazon(nganh, lam_moi=False):
 NGU_CANH = {"shirt", "shirts", "tshirt", "tshirts", "t", "tee", "tees", "gift", "gifts", "funny", "hoodie",
             "hoodies", "sweatshirt", "retired", "retirement", "appreciation", "christmas", "birthday", "humor",
             "sarcastic", "proud", "dad", "mom", "wife", "husband", "life", "patriotic", "american"}
-CHO_AI = {"men", "women", "him", "her", "dad", "mom", "husband", "wife", "grandpa"}
+CHO_AI = {"men", "women", "him", "her", "dad", "mom", "husband", "wife", "grandpa", "grandma"}
 TU_RAC = {"teen", "boys", "girls", "kids", "toddler", "baby", "youth", "tester", "tool", "tools", "kit",
           "bag", "belt", "pouch", "pants", "boots", "gloves", "socks", "book", "books", "card", "cards",
           "ornament", "tumbler", "cup", "keychain", "near", "jobs", "job", "salary", "course", "license",
@@ -563,8 +563,8 @@ def tu_khoa(nganh, cau):
 TU_CUM = {"for", "a", "and", "the", "gift", "gifts", "men", "women", "him", "her", "new", "male", "female",
           "coworker", "coworkers", "boss", "friend", "son", "daughter", "grandma", "nana", "papa", "father",
           "mother", "lover", "lovers", "gag", "work", "of", "year", "first"}
-NAM = {"for men", "for him", "for dad", "dad", "husband", "grandpa", "male", "papa", "father", "son"}
-NU = {"for women", "for her", "for mom", "mom", "wife", "grandma", "nana", "female", "mother", "daughter"}
+NAM = {"for men", "for him", "for dad", "for husband", "for grandpa", "dad", "husband", "grandpa", "male", "papa", "father", "son"}
+NU = {"for women", "for her", "for mom", "for wife", "for grandma", "mom", "wife", "grandma", "nana", "female", "mother", "daughter"}
 
 
 DIP_LE = {"christmas", "halloween", "thanksgiving", "valentines", "easter", "graduation"}
@@ -682,6 +682,22 @@ def la_mua_dip(w):
 NGUOI_NHAN = {"dad", "mom", "husband", "wife", "grandpa", "grandma", "papa", "nana", "father", "mother"}
 
 
+# Người nhận trong chữ design -> ô tick thêm "for wife"... (Amazon nghề hẹp không gợi ý nhưng khách gõ "gifts for wife")
+NGUOI_O_TICK = {"wife": "for wife", "husband": "for husband", "mom": "for mom", "mother": "for mom",
+                "dad": "for dad", "father": "for dad", "grandpa": "for grandpa", "papa": "for grandpa",
+                "grandma": "for grandma", "nana": "for grandma", "girlfriend": "for her", "boyfriend": "for him"}
+
+
+def tk_theo_design(chu):
+    """Ô tick người nhận lấy từ chữ design (thứ tự xuất hiện, không trùng)."""
+    c = (chu or "").lower()
+    ra = []
+    for w, o in NGUOI_O_TICK.items():
+        if _co_tu(c, w) and o not in ra:
+            ra.append(o)
+    return ra
+
+
 def tk_cho_title(tk, chu, cho_mua=False):
     """Bỏ từ mùa/dịp (trừ khi design nói về nó hoặc cho_mua=True) + chỉ giữ 1 từ hài hước xếp hạng cao nhất."""
     c = (chu or "").lower()
@@ -731,8 +747,8 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False, gioi=
         duoi = " Gifts" + (" " + chu_hoa(cho) if cho and not _co_tu(t0, cho) else "")
         if len(t0) + len(duoi) > toi_da:
             duoi = " Gifts" if len(t0) + 6 <= toi_da else ""
-    nam, nu = {"dad", "husband", "grandpa", "for men", "for him", "for dad"}, {"mom", "wife", "for women",
-                                                                              "for her", "for mom"}
+    nam = {"dad", "husband", "grandpa", "for men", "for him", "for dad", "for husband", "for grandpa"}
+    nu = {"mom", "wife", "for women", "for her", "for mom", "for wife", "for grandma"}
     dung_sau = nam | nu | set(TU_MUA) | {"life", "crew", "squad", "team", "pride", "retirement", "appreciation",
                                          "birthday", "week"}
     nguoi = set()  # đã có người nhận nào (dad/mom...) -> không thêm người thứ hai / trái giới

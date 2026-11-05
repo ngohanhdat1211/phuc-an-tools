@@ -51,7 +51,8 @@ class App(tk.Tk):
         self.tk_list, self.chon, self.cau = [], {}, []
         self.claude = {}  # duong -> kết quả Claude Opus nhìn ảnh (kiểu, chữ, giới, rủi ro)
         self.tu_dong = {}  # duong -> chữ chính tool tự điền (để biết anh có sửa tay không)
-        self.tu_tat = set()  # từ khoá tool tự bỏ tick vì không hợp kiểu design (funny ở design tự hào...)
+        self.tu_tat = set()
+        self.tk_them = []  # ô tick người nhận theo chữ design: for wife, for husband...  # từ khoá tool tự bỏ tick vì không hợp kiểu design (funny ở design tự hào...)
         self.nganh_da_lay = None
         self.anh_tk = None
         self._hen = None
@@ -154,7 +155,8 @@ class App(tk.Tk):
                        bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8), activebackground=gd.KEM,
                        selectcolor=gd.TRANG, command=self._hen_tao).pack(side="right")
         tk.Label(p, text="(mùa)/(dịp)/(người) = chỉ dùng ở Bullet + Description, trừ khi chữ design có từ đó "
-                         "— title bán quanh năm. Từ hài/tự hào tự tick theo Kiểu design", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(anchor="w")
+                         "— title bán quanh năm. Từ hài/tự hào tự tick theo Kiểu design. (design) = người nhận trong chữ design, "
+                         "tick để title ra \"Gifts For Wife\"...", bg=gd.KEM, fg=gd.CHU_PHU, font=(gd.FONT, 8)).pack(anchor="w")
         self.k_tk = tk.Frame(p, bg=gd.KEM)
         self.k_tk.pack(fill="x")
 
@@ -314,20 +316,26 @@ class App(tk.Tk):
     def _ve_tu_khoa(self, tk_, nguon, n):
         self.tk_list = tk_[:18]
         self.l_nguon.config(text=f"Nguồn: {nguon} — {n} câu khách gõ")
+        self._ve_luoi()
+        self._tao()
+
+    def _ve_luoi(self):
+        """Ô tick = người nhận lấy từ chữ design ("for wife"... mặc định chưa tick) + từ khoá Amazon."""
         for w in self.k_tk.winfo_children():
             w.destroy()
         cu = self.chon
         self.chon = {}
-        for j, w in enumerate(self.tk_list):
-            v = tk.BooleanVar(value=cu[w].get() if w in cu else True)
+        luoi = [w for w in self.tk_them if w not in self.tk_list] + self.tk_list
+        for j, w in enumerate(luoi):
+            v = tk.BooleanVar(value=cu[w].get() if w in cu else w not in self.tk_them)
             v.trace_add("write", lambda *a: self._hen_tao())
             self.chon[w] = v
             nhan = f"{j + 1}. {w}" + (" (mùa)" if w in mt.TU_MUA else " (dịp)" if w in mt.TU_DIP
-                                      else " (người)" if w in mt.NGUOI_NHAN else "")
+                                      else " (người)" if w in mt.NGUOI_NHAN else " (design)" if w in self.tk_them
+                                      else "")
             tk.Checkbutton(self.k_tk, text=nhan, variable=v, bg=gd.KEM, fg=gd.CHU, font=(gd.FONT, 9),
                            activebackground=gd.KEM, selectcolor=gd.TRANG, anchor="w", width=17).grid(
                 row=j // 5, column=j % 5, sticky="w")
-        self._tao()
 
     # ---------------- ghép ----------------
     def _hen_tao(self):
@@ -336,7 +344,8 @@ class App(tk.Tk):
         self._hen = self.after(250, self._tao)
 
     def _tk_chon(self):
-        return [w for w in self.tk_list if self.chon.get(w) is not None and self.chon[w].get()]
+        luoi = [w for w in self.tk_them if w not in self.tk_list] + self.tk_list
+        return [w for w in luoi if self.chon.get(w) is not None and self.chon[w].get()]
 
     def _tao(self):
         self._hen = None
@@ -345,6 +354,10 @@ class App(tk.Tk):
             return
         d = self.ds[self.i] if self.ds else None
         cl = self.claude.get(d)
+        them = mt.tk_theo_design(chu + " " + (cl or {}).get("chu", ""))
+        if them != self.tk_them and self.tk_list:
+            self.tk_them = them
+            self._ve_luoi()
         kq = mt.tao(chu, self.v_nganh.get().strip(), self._tk_chon(), self.v_brand.get().strip() or None,
                     self.cau, self.v_mua.get(), self.sua_giong.get(d) or (cl or {}).get("giong"), self._ocr_hien(),
                     (cl or {}).get("gioi"))
