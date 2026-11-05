@@ -56,11 +56,11 @@ or insignia.
 Step 3 - layout for THIS variant: {bo_cuc}
 
 Step 4 - draw it as a rich, professional SVG:
-- A real ILLUSTRATION matching the reference's subject type: if it shows a person, draw a stylized flat-vector
-  person in the same spirit (e.g. fashion-illustration woman: flowing hair drawn as many curved strands in 2-3
-  tones, big sunglasses with gradient lenses and highlight, glossy lips, earrings, bare shoulders/outfit, soft skin
-  shading) - stylized and elegant, not realistic, never a stick figure or blocky robot. Many <path> elements with
-  C/Q curves, at least 2 tones per object (base + shadow + highlight), <linearGradient>/<radialGradient> allowed.
+- NEVER draw human figures, faces or bodies (code-drawn people look stiff and cheap). If the reference shows a
+  person, replace them with iconic OBJECTS/SYMBOLS of the same vibe and buyer, drawn beautifully: e.g. glam = glossy
+  lips, big sunglasses with gradient lenses and shine, high heels, crown, cocktail glass with splash and garnish,
+  sparkles, hoop earrings; job niches = the tools of the trade. Make the objects a rich hero illustration: many
+  <path> elements with C/Q curves, at least 2 tones per object (base + shadow + highlight), gradients, glints.
 - Background effects that match the vibe, e.g. watercolor/paint splashes = several overlapping irregular blobs with
   low-opacity gradients + drips + small splatter dots (make blob edges organic with
   <filter><feTurbulence baseFrequency="0.01" numOctaves="3"/><feDisplacementMap scale="120"/></filter>).
@@ -86,7 +86,7 @@ Reference design from a competitor: {anh}
 Judge it like the reference's buyer on Etsy. Score 1-10 for: SAME VIBE as the reference (mood, target buyer,
 art technique, font personality - a vintage badge for a glam/sexy reference scores 1), illustration quality,
 typography craft, composition, color contrast on the shirt.
-1) Always fix errors: clipped/overflowing text, overlaps, illegible text, weak contrast, broken or awkward art,
+1) Always fix errors: clipped/overflowing text, overlaps, illegible text, weak contrast, broken or awkward art, any human figure/face (remove it, replace with objects),
    big empty gaps.
 2) If any score is below 8: UPGRADE the SVG (restyle toward the reference's vibe, more detailed/elegant illustration
    with shading and highlights, better type lockup, tighter composition) - keep the same slogan.
@@ -193,7 +193,7 @@ def redesign(anh, ra, so=1, soat=True, claude=None, chrome=None, bao=print):
         tam = tempfile.mkdtemp(prefix="rd_", dir=ra)
         svg = os.path.join(tam, "design.svg")
         khac = (f'. Already made: {"; ".join(da)} - the new slogan must not reuse their key words or opening words, '
-                f'and the illustration must use a different pose/scene (same vibe and buyer)') if da else ""
+                f'and the hero illustration must use different objects/scene (same vibe and buyer)') if da else ""
         t0 = time.time()
         bao(f"[{i + 1}/{so}] Claude đang nghĩ mẫu mới cho {os.path.basename(anh)}…")
         tra, phi = goi_claude(claude, DE_BAI.format(anh=os.path.abspath(anh), khac=khac, nen=nen, font=TEN_FONT,

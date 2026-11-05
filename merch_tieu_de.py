@@ -742,7 +742,9 @@ def tao_title(chu, nganh, tk, toi_da=TITLE_MAX, chu_max=40, cho_mua=False, gioi=
 
     gioi = _boi_canh(nganh, tk, chu, gioi)[1]
     trai = NU if gioi == "nam" else (NAM if gioi == "nu" else set())  # design nói về vợ -> không "For Men"
-    cho = next((w for w in ep if w.startswith("for ") and w in tk), None) or         next((w for w in tk if w.startswith("for ") and w not in trai), None)
+    # anh tick "wife"/"mom" (không có "for") cũng hiểu là muốn "Gifts For Wife"/"For Mom"
+    ep_cho = [w if w.startswith("for ") else "for " + w for w in ep if w in tk and (w.startswith("for ") or w in NGUOI_NHAN)]
+    cho = next(iter(ep_cho), None) or next((w for w in tk if w.startswith("for ") and w not in trai), None)
     co_gifts = "gifts" in tk or cho is not None
     t0 = ghep()
     duoi = ""

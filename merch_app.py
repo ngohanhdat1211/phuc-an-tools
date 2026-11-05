@@ -315,6 +315,7 @@ class App(tk.Tk):
         threading.Thread(target=chay, daemon=True).start()
 
     def _ve_tu_khoa(self, tk_, nguon, n):
+        self.tk_cu = self.tk_list
         self.tk_list = tk_[:18]
         self.l_nguon.config(text=f"Nguồn: {nguon} — {n} câu khách gõ")
         self._ve_luoi()
@@ -327,14 +328,16 @@ class App(tk.Tk):
         return list(dict.fromkeys(self.tk_them + self.tk_list + mt.THEM_CO_DINH))
 
     def _ve_luoi(self):
-        """Ô tick = người nhận lấy từ chữ design ("for wife"... mặc định chưa tick) + từ khoá Amazon."""
+        """Ô tick = người nhận theo chữ design + từ khoá Amazon + ô người nhận luôn có (mặc định chưa tick)."""
         for w in self.k_tk.winfo_children():
             w.destroy()
         cu = self.chon
         self.chon = {}
         luoi = self._luoi()
         for j, w in enumerate(luoi):
-            v = tk.BooleanVar(value=cu[w].get() if w in cu else w in self.tk_list)
+            # ô thêm chỉ giữ trạng thái cũ nếu trước đó cũng là ô thêm (anh tự tick), không kế thừa tick của từ khoá cũ
+            giu = w in cu and (w in self.tk_list) == (w in getattr(self, "tk_cu", self.tk_list))
+            v = tk.BooleanVar(value=cu[w].get() if giu else w in self.tk_list)
             v.trace_add("write", lambda *a: self._hen_tao())
             self.chon[w] = v
             nhan = f"{j + 1}. {w}" + (" (mùa)" if w in mt.TU_MUA else " (dịp)" if w in mt.TU_DIP
